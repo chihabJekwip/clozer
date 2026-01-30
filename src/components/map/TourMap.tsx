@@ -45,11 +45,11 @@ export default function TourMap({
 }: TourMapProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [icons, setIcons] = useState<{
-    start: L.Icon | null;
-    pending: L.Icon | null;
-    current: L.Icon | null;
-    completed: L.Icon | null;
-    absent: L.Icon | null;
+    start: L.DivIcon | null;
+    pending: L.DivIcon | null;
+    current: L.DivIcon | null;
+    completed: L.DivIcon | null;
+    absent: L.DivIcon | null;
   }>({ start: null, pending: null, current: null, completed: null, absent: null });
 
   // Charger Leaflet côté client uniquement
