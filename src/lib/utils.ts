@@ -134,5 +134,5 @@ export function generateAddressVariants(adresse: string, codePostal: string, vil
   variants.push(`${ville}, Charente, France`);
   
   // Supprimer les doublons
-  return [...new Set(variants.map(v => v.replace(/\s+/g, ' ').trim()))];
+  return Array.from(new Set(variants.map(v => v.replace(/\s+/g, ' ').trim())));
 }
