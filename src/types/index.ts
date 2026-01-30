@@ -139,6 +139,7 @@ export interface OptimizedRoute {
 export interface LatLng {
   lat: number;
   lng: number;
+  address?: string;
 }
 
 // Résultat de géocodage
