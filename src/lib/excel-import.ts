@@ -81,8 +81,8 @@ export function parseExcelFile(file: ArrayBuffer): {
     // Trouver la ligne d'en-tête (chercher une ligne avec "Civilité" ou "Nom")
     let headerRowIndex = -1;
     for (let i = 0; i < Math.min(5, jsonData.length); i++) {
-      const row = jsonData[i] as (string | number)[];
-      if (row && row.some(cell => {
+      const row = jsonData[i] as unknown as (string | number)[];
+      if (row && Array.isArray(row) && row.some(cell => {
         const cellStr = String(cell || '').toLowerCase();
         return cellStr.includes('civilit') || cellStr.includes('nom') || cellStr.includes('prenom');
       })) {
@@ -96,7 +96,7 @@ export function parseExcelFile(file: ArrayBuffer): {
       return { clients, errors };
     }
 
-    const headers = (jsonData[headerRowIndex] as string[]).map(h => String(h || ''));
+    const headers = (jsonData[headerRowIndex] as unknown as string[]).map(h => String(h || ''));
     const columnMapping = findColumnMapping(headers);
 
     if (columnMapping.size === 0) {
@@ -106,8 +106,8 @@ export function parseExcelFile(file: ArrayBuffer): {
 
     // Parser les données
     for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-      const row = jsonData[i] as (string | number)[];
-      if (!row || row.length === 0) continue;
+      const row = jsonData[i] as unknown as (string | number)[];
+      if (!row || !Array.isArray(row) || row.length === 0) continue;
 
       // Vérifier si la ligne n'est pas vide
       const hasData = row.some(cell => cell !== undefined && cell !== null && cell !== '');
