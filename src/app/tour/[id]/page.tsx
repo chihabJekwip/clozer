@@ -1,0 +1,544 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { Client, Tour, Visit, AbsentStrategy } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import TourProgress from '@/components/tour/TourProgress';
+import VisitList from '@/components/tour/VisitList';
+import AbsentModal from '@/components/tour/AbsentModal';
+import QuoteForm from '@/components/quote/QuoteForm';
+import {
+  getClients,
+  getTour,
+  getVisitsByTour,
+  updateTour,
+  updateVisit,
+  updateVisitsOrder,
+  addQuote,
+  getSettings,
+} from '@/lib/storage';
+import { getFullRoute, getDistanceMatrix } from '@/lib/routing';
+import { optimizeTour } from '@/lib/optimization';
+import { formatDistance, formatDuration } from '@/lib/utils';
+import {
+  ArrowLeft,
+  Map as MapIcon,
+  List,
+  Play,
+  Pause,
+  RotateCcw,
+  Navigation,
+  FileText,
+  Home,
+} from 'lucide-react';
+
+// Import dynamique de la carte pour éviter les erreurs SSR
+const TourMap = dynamic(() => import('@/components/map/TourMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  ),
+});
+
+type ViewMode = 'map' | 'list' | 'split';
+
+export default function TourPage() {
+  const params = useParams();
+  const router = useRouter();
+  const tourId = params.id as string;
+
+  const [tour, setTour] = useState<Tour | null>(null);
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [currentVisitIndex, setCurrentVisitIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [showAbsentModal, setShowAbsentModal] = useState(false);
+  const [absentVisit, setAbsentVisit] = useState<Visit | null>(null);
+  const [showQuoteForm, setShowQuoteForm] = useState(false);
+  const [quoteClient, setQuoteClient] = useState<Client | null>(null);
+  const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
+
+  // Charger les données
+  useEffect(() => {
+    const loadData = () => {
+      const tourData = getTour(tourId);
+      if (!tourData) {
+        router.push('/');
+        return;
+      }
+
+      setTour(tourData);
+      setVisits(getVisitsByTour(tourId));
+      setClients(getClients());
+    };
+
+    loadData();
+  }, [tourId, router]);
+
+  // Trouver l'index de la première visite non terminée
+  useEffect(() => {
+    const pendingIndex = visits.findIndex(
+      v => v.status === 'pending' || v.status === 'in_progress'
+    );
+    if (pendingIndex !== -1) {
+      setCurrentVisitIndex(pendingIndex);
+    }
+  }, [visits]);
+
+  // Calculer l'heure de fin estimée
+  useEffect(() => {
+    if (!tour || visits.length === 0) return;
+
+    const settings = getSettings();
+    const [endHour, endMinute] = settings.workEndTime.split(':').map(Number);
+    const workEndTime = new Date();
+    workEndTime.setHours(endHour, endMinute, 0, 0);
+
+    const remainingVisits = visits.slice(currentVisitIndex);
+    const totalRemainingSeconds = remainingVisits.reduce(
+      (sum, v) => sum + (v.durationFromPrevious || 0) + v.estimatedDuration * 60,
+      0
+    );
+
+    const estimated = new Date(Date.now() + totalRemainingSeconds * 1000);
+    setEstimatedEndTime(estimated);
+  }, [tour, visits, currentVisitIndex]);
+
+  // Optimiser la tournée
+  const handleOptimize = async () => {
+    if (!tour || clients.length === 0) return;
+
+    setIsOptimizing(true);
+
+    try {
+      // Filtrer les clients de la tournée avec coordonnées
+      const tourClients = visits
+        .map(v => clients.find(c => c.id === v.clientId))
+        .filter((c): c is Client => !!c && !!c.latitude && !!c.longitude);
+
+      if (tourClients.length === 0) {
+        setIsOptimizing(false);
+        return;
+      }
+
+      // Créer les points pour l'optimisation
+      const points = tourClients.map(c => ({
+        lat: c.latitude!,
+        lng: c.longitude!,
+      }));
+
+      // Ajouter le point de départ
+      const allPoints = [
+        { lat: tour.startPoint.lat, lng: tour.startPoint.lng },
+        ...points,
+      ];
+
+      // Obtenir la matrice des distances
+      const matrix = await getDistanceMatrix(allPoints);
+
+      // Optimiser avec ou sans matrice
+      const result = optimizeTour(
+        tour.startPoint,
+        points,
+        matrix?.distances
+      );
+
+      // Réorganiser les visites selon l'ordre optimal
+      const optimizedVisitIds = result.orderedIndices.map(i => {
+        const client = tourClients[i];
+        const visit = visits.find(v => v.clientId === client.id);
+        return visit?.id;
+      }).filter((id): id is string => !!id);
+
+      updateVisitsOrder(tourId, optimizedVisitIds);
+
+      // Calculer l'itinéraire complet
+      const orderedPoints = [
+        tour.startPoint,
+        ...result.orderedIndices.map(i => ({
+          lat: tourClients[i].latitude!,
+          lng: tourClients[i].longitude!,
+        })),
+        tour.startPoint, // Retour au bureau
+      ];
+
+      const routeResult = await getFullRoute(orderedPoints);
+
+      if (routeResult) {
+        setRouteGeometry(routeResult.fullGeometry);
+
+        // Mettre à jour les distances et durées des visites
+        const updatedVisits = getVisitsByTour(tourId);
+        routeResult.segments.forEach((segment, i) => {
+          if (i < updatedVisits.length) {
+            updateVisit(updatedVisits[i].id, {
+              distanceFromPrevious: segment.distance,
+              durationFromPrevious: segment.duration,
+            });
+          }
+        });
+
+        // Mettre à jour le tour avec les totaux
+        updateTour(tourId, {
+          totalDistance: routeResult.totalDistance,
+          totalDuration: routeResult.totalDuration,
+          status: 'in_progress',
+        });
+      }
+
+      // Recharger les données
+      setTour(getTour(tourId) || null);
+      setVisits(getVisitsByTour(tourId));
+    } catch (error) {
+      console.error('Erreur lors de l\'optimisation:', error);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  // Marquer une visite comme terminée
+  const handleMarkCompleted = (visitId: string) => {
+    updateVisit(visitId, {
+      status: 'completed',
+      visitedAt: new Date().toISOString(),
+    });
+
+    const updatedVisits = getVisitsByTour(tourId);
+    setVisits(updatedVisits);
+
+    // Passer à la visite suivante
+    const nextPendingIndex = updatedVisits.findIndex(
+      v => v.status === 'pending' || v.status === 'in_progress'
+    );
+    if (nextPendingIndex !== -1) {
+      setCurrentVisitIndex(nextPendingIndex);
+    }
+
+    // Vérifier si toutes les visites sont terminées
+    const allCompleted = updatedVisits.every(
+      v => v.status === 'completed' || v.status === 'postponed'
+    );
+    if (allCompleted) {
+      updateTour(tourId, { status: 'completed' });
+      setTour(getTour(tourId) || null);
+    }
+  };
+
+  // Gérer l'absence d'un client
+  const handleMarkAbsent = (visitId: string) => {
+    const visit = visits.find(v => v.id === visitId);
+    if (visit) {
+      setAbsentVisit(visit);
+      setShowAbsentModal(true);
+    }
+  };
+
+  // Confirmer la stratégie pour client absent
+  const handleAbsentStrategy = (strategy: AbsentStrategy, notes?: string) => {
+    if (!absentVisit) return;
+
+    if (strategy === 'another_day') {
+      // Reporter à un autre jour
+      updateVisit(absentVisit.id, {
+        status: 'postponed',
+        notes: notes || null,
+        absentStrategy: strategy,
+      });
+    } else {
+      // Marquer comme absent mais à revisiter
+      updateVisit(absentVisit.id, {
+        status: 'skipped',
+        notes: notes || null,
+        absentStrategy: strategy,
+      });
+
+      // TODO: Réorganiser les visites selon la stratégie
+      // Pour 'after_next': déplacer cette visite juste après la prochaine
+      // Pour 'on_return': déplacer cette visite à la fin
+    }
+
+    setVisits(getVisitsByTour(tourId));
+    setAbsentVisit(null);
+    setShowAbsentModal(false);
+  };
+
+  // Ouvrir la navigation GPS
+  const handleNavigate = (client: Client) => {
+    if (!client.latitude || !client.longitude) return;
+
+    const address = encodeURIComponent(
+      `${client.adresse}, ${client.codePostal} ${client.ville}`
+    );
+
+    // Ouvrir Google Maps ou l'app de navigation par défaut
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${client.latitude},${client.longitude}&destination_place_id=${address}`;
+    window.open(url, '_blank');
+  };
+
+  // Ouvrir le formulaire de devis
+  const handleOpenQuote = (client: Client) => {
+    setQuoteClient(client);
+    setShowQuoteForm(true);
+  };
+
+  // Sauvegarder un devis
+  const handleSaveQuote = (quoteData: Parameters<typeof addQuote>[0]) => {
+    addQuote(quoteData);
+    setShowQuoteForm(false);
+    setQuoteClient(null);
+  };
+
+  if (!tour) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const currentVisit = visits[currentVisitIndex];
+  const currentClient = currentVisit
+    ? clients.find(c => c.id === currentVisit.clientId)
+    : null;
+
+  // Affichage du formulaire de devis
+  if (showQuoteForm && quoteClient) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="bg-white border-b p-4 sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowQuoteForm(false)}
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="font-semibold">Nouveau devis</h1>
+              <p className="text-sm text-muted-foreground">
+                {quoteClient.nom} {quoteClient.prenom}
+              </p>
+            </div>
+          </div>
+        </header>
+        <div className="p-4">
+          <QuoteForm
+            client={quoteClient}
+            visitId={currentVisit?.id}
+            onSave={handleSaveQuote}
+            onCancel={() => setShowQuoteForm(false)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Header */}
+      <header className="bg-white border-b p-3 lg:p-4 flex-shrink-0">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push('/')}
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div>
+              <h1 className="font-semibold text-sm lg:text-lg">{tour.name}</h1>
+              <div className="flex items-center gap-2 text-xs lg:text-sm text-muted-foreground">
+                <Badge
+                  variant={
+                    tour.status === 'in_progress' ? 'default' :
+                    tour.status === 'completed' ? 'success' : 'secondary'
+                  }
+                  className="text-xs"
+                >
+                  {tour.status === 'planning' && 'Planifié'}
+                  {tour.status === 'in_progress' && 'En cours'}
+                  {tour.status === 'completed' && 'Terminé'}
+                  {tour.status === 'paused' && 'En pause'}
+                </Badge>
+                {tour.totalDistance && (
+                  <span>{formatDistance(tour.totalDistance)}</span>
+                )}
+                {tour.totalDuration && (
+                  <span className="hidden lg:inline">• {formatDuration(tour.totalDuration)}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Actions header */}
+          <div className="flex items-center gap-2">
+            {currentClient && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenQuote(currentClient)}
+                className="hidden sm:flex"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                <span className="hidden lg:inline">Créer devis</span>
+              </Button>
+            )}
+            <Button
+              variant={isOptimizing ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={handleOptimize}
+              disabled={isOptimizing}
+            >
+              {isOptimizing ? (
+                <RotateCcw className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <RotateCcw className="w-4 h-4 lg:mr-2" />
+                  <span className="hidden lg:inline">Optimiser</span>
+                </>
+              )}
+            </Button>
+            {currentClient && currentClient.latitude && currentClient.longitude && (
+              <Button
+                size="sm"
+                onClick={() => handleNavigate(currentClient)}
+                className="hidden lg:flex"
+              >
+                <Navigation className="w-4 h-4 mr-2" />
+                Navigation
+              </Button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Progress bar */}
+      <div className="max-w-7xl mx-auto w-full">
+        <TourProgress
+          visits={visits}
+          currentIndex={currentVisitIndex}
+          totalDistance={tour.totalDistance}
+          totalDuration={tour.totalDuration}
+          estimatedEndTime={estimatedEndTime}
+        />
+      </div>
+
+      {/* Toggle vue - Mobile uniquement */}
+      <div className="bg-white border-b px-4 py-2 flex-shrink-0 lg:hidden">
+        <div className="flex rounded-lg bg-muted p-1">
+          <button
+            className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+              viewMode === 'map' ? 'bg-white shadow' : ''
+            }`}
+            onClick={() => setViewMode('map')}
+          >
+            <MapIcon className="w-4 h-4 inline mr-1" />
+            Carte
+          </button>
+          <button
+            className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+              viewMode === 'split' ? 'bg-white shadow' : ''
+            }`}
+            onClick={() => setViewMode('split')}
+          >
+            Les deux
+          </button>
+          <button
+            className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+              viewMode === 'list' ? 'bg-white shadow' : ''
+            }`}
+            onClick={() => setViewMode('list')}
+          >
+            <List className="w-4 h-4 inline mr-1" />
+            Liste
+          </button>
+        </div>
+      </div>
+
+      {/* Contenu principal - Layout responsive */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        {/* Carte - Desktop: toujours visible à gauche, Mobile: selon viewMode */}
+        <div
+          className={`
+            ${viewMode === 'list' ? 'hidden' : ''}
+            ${viewMode === 'split' ? 'h-[40vh]' : 'flex-1'}
+            lg:flex lg:w-2/3 lg:h-auto
+            flex-shrink-0
+          `}
+        >
+          <TourMap
+            clients={clients}
+            visits={visits}
+            currentVisitIndex={currentVisitIndex}
+            routeGeometry={routeGeometry}
+            startPoint={tour.startPoint}
+            onClientClick={(client) => {
+              const visitIndex = visits.findIndex(v => v.clientId === client.id);
+              if (visitIndex !== -1) {
+                setCurrentVisitIndex(visitIndex);
+              }
+            }}
+          />
+        </div>
+
+        {/* Liste des visites - Desktop: toujours visible à droite, Mobile: selon viewMode */}
+        <div 
+          className={`
+            ${viewMode === 'map' ? 'hidden' : ''}
+            flex-1 overflow-y-auto bg-gray-50
+            lg:flex lg:flex-col lg:w-1/3 lg:border-l
+          `}
+        >
+          <VisitList
+            visits={visits}
+            clients={clients}
+            currentIndex={currentVisitIndex}
+            onMarkCompleted={handleMarkCompleted}
+            onMarkAbsent={handleMarkAbsent}
+            onNavigate={handleNavigate}
+            onSelectVisit={setCurrentVisitIndex}
+          />
+        </div>
+      </div>
+
+      {/* Bouton de navigation flottant - Mobile uniquement */}
+      {currentClient && currentClient.latitude && currentClient.longitude && viewMode !== 'list' && (
+        <div className="fixed bottom-4 right-4 z-10 lg:hidden">
+          <Button
+            size="lg"
+            className="rounded-full shadow-lg h-14 w-14"
+            onClick={() => handleNavigate(currentClient)}
+          >
+            <Navigation className="w-6 h-6" />
+          </Button>
+        </div>
+      )}
+
+      {/* Modal client absent */}
+      {absentVisit && (
+        <AbsentModal
+          open={showAbsentModal}
+          onClose={() => {
+            setShowAbsentModal(false);
+            setAbsentVisit(null);
+          }}
+          client={clients.find(c => c.id === absentVisit.clientId)!}
+          onSelectStrategy={handleAbsentStrategy}
+          estimatedExtraTime={{
+            afterNext: 8,
+            onReturn: 15,
+          }}
+        />
+      )}
+    </div>
+  );
+}
