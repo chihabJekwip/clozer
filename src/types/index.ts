@@ -12,6 +12,12 @@ export interface User {
   updatedAt: string;
 }
 
+// ==================== CLIENT TYPES ====================
+
+export type ClientStatus = 'active' | 'inactive';
+
+export type AvailabilityProfile = 'retired' | 'working' | null;
+
 export interface Client {
   id: string;
   civilite: string;
@@ -26,6 +32,12 @@ export interface Client {
   latitude: number | null;
   longitude: number | null;
   assignedTo: string | null; // ID du commercial assigné
+  // V2 fields
+  status: ClientStatus;
+  availabilityProfile: AvailabilityProfile;
+  deactivationReason: string | null;
+  deactivatedAt: string | null;
+  deactivatedBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,11 +55,26 @@ export interface Tour {
   totalDistance: number | null; // en mètres
   totalDuration: number | null; // en secondes
   userId: string | null; // ID du commercial propriétaire
+  // V2 fields
+  startAddressId: string | null; // Reference to UserAddress
+  finalReport: string | null; // Final consolidated report
+  reportValidatedAt: string | null;
+  reportSentAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type TourStatus = 'planning' | 'in_progress' | 'completed' | 'paused';
+
+// ==================== TOUR NOTES (Carnet de bord) ====================
+
+export interface TourNote {
+  id: string;
+  tourId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Visit {
   id: string;
@@ -130,6 +157,61 @@ export interface AppSettings {
   companyPhone: string;
   companySiret: string;
   currentUserId: string | null; // ID de l'utilisateur connecté
+  // V2 fields
+  workingProfileHour: string; // "17:30" - heure préférée pour clients actifs
+  headquarters: {
+    address: string;
+    city: string;
+    postalCode: string;
+    lat: number | null;
+    lng: number | null;
+  };
+  confirmationWords: string[]; // Mots aléatoires pour confirmer fin de tournée
+}
+
+// ==================== USER ADDRESSES ====================
+
+export interface UserAddress {
+  id: string;
+  userId: string;
+  name: string; // "Domicile", "Bureau Lyon", etc.
+  address: string;
+  city: string;
+  postalCode: string;
+  latitude: number | null;
+  longitude: number | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==================== REACTIVATION REQUESTS ====================
+
+export type ReactivationRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ReactivationRequest {
+  id: string;
+  clientId: string;
+  requestedBy: string; // User ID of commercial
+  reason: string;
+  status: ReactivationRequestStatus;
+  reviewedBy: string | null; // User ID of admin
+  reviewComment: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  // Relations (optional, populated when needed)
+  client?: Client;
+  requester?: User;
+  reviewer?: User;
+}
+
+// ==================== USER SUPERVISORS ====================
+
+export interface UserSupervisor {
+  id: string;
+  userId: string; // Commercial
+  supervisorId: string; // Admin/Manager
+  createdAt: string;
 }
 
 // Pour le calcul d'itinéraire

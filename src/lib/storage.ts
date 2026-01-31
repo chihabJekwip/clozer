@@ -1,7 +1,22 @@
 // Stockage des données avec Supabase
 // Synchronisation entre tous les appareils
 
-import { Client, Tour, Visit, Quote, AppSettings, User, VisitReport } from '@/types';
+import { 
+  Client, 
+  Tour, 
+  Visit, 
+  Quote, 
+  AppSettings, 
+  User, 
+  VisitReport,
+  TourNote,
+  UserAddress,
+  ReactivationRequest,
+  UserSupervisor,
+  ClientStatus,
+  AvailabilityProfile,
+  ReactivationRequestStatus
+} from '@/types';
 import { supabase } from './supabase';
 import { generateId } from './utils';
 import { ANGOULEME_COORDINATES } from './geocoding';
@@ -22,6 +37,12 @@ function toDbClient(client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): any
     latitude: client.latitude,
     longitude: client.longitude,
     assigned_to: client.assignedTo,
+    // V2 fields
+    status: client.status || 'active',
+    availability_profile: client.availabilityProfile,
+    deactivation_reason: client.deactivationReason,
+    deactivated_at: client.deactivatedAt,
+    deactivated_by: client.deactivatedBy,
   };
 }
 
@@ -40,6 +61,12 @@ function fromDbClient(db: any): Client {
     latitude: db.latitude,
     longitude: db.longitude,
     assignedTo: db.assigned_to,
+    // V2 fields
+    status: db.status || 'active',
+    availabilityProfile: db.availability_profile || null,
+    deactivationReason: db.deactivation_reason || null,
+    deactivatedAt: db.deactivated_at || null,
+    deactivatedBy: db.deactivated_by || null,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -70,6 +97,11 @@ function fromDbTour(db: any): Tour {
     totalDistance: db.total_distance,
     totalDuration: db.total_duration,
     userId: db.user_id,
+    // V2 fields
+    startAddressId: db.start_address_id || null,
+    finalReport: db.final_report || null,
+    reportValidatedAt: db.report_validated_at || null,
+    reportSentAt: db.report_sent_at || null,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -144,6 +176,67 @@ function fromDbSettings(db: any): AppSettings {
     companyPhone: db.company_phone,
     companySiret: db.company_siret,
     currentUserId: null,
+    // V2 fields
+    workingProfileHour: db.working_profile_hour || '17:30',
+    headquarters: {
+      address: db.headquarters_address || '22 avenue de la République',
+      city: db.headquarters_city || 'Le Gond-Pontouvre',
+      postalCode: db.headquarters_postal_code || '16160',
+      lat: db.headquarters_lat || null,
+      lng: db.headquarters_lng || null,
+    },
+    confirmationWords: db.confirmation_words || ['TERMINER', 'VALIDER', 'CONFIRMER', 'ORANGE', 'ACCORD'],
+  };
+}
+
+// ==================== NEW HELPER FUNCTIONS FOR V2 ====================
+
+function fromDbTourNote(db: any): TourNote {
+  return {
+    id: db.id,
+    tourId: db.tour_id,
+    content: db.content,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbUserAddress(db: any): UserAddress {
+  return {
+    id: db.id,
+    userId: db.user_id,
+    name: db.name,
+    address: db.address,
+    city: db.city,
+    postalCode: db.postal_code,
+    latitude: db.latitude,
+    longitude: db.longitude,
+    isDefault: db.is_default || false,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbReactivationRequest(db: any): ReactivationRequest {
+  return {
+    id: db.id,
+    clientId: db.client_id,
+    requestedBy: db.requested_by,
+    reason: db.reason,
+    status: db.status,
+    reviewedBy: db.reviewed_by,
+    reviewComment: db.review_comment,
+    createdAt: db.created_at,
+    reviewedAt: db.reviewed_at,
+  };
+}
+
+function fromDbUserSupervisor(db: any): UserSupervisor {
+  return {
+    id: db.id,
+    userId: db.user_id,
+    supervisorId: db.supervisor_id,
+    createdAt: db.created_at,
   };
 }
 
@@ -281,6 +374,12 @@ export async function updateClientAsync(id: string, updates: Partial<Client>): P
   if (updates.latitude !== undefined) dbUpdates.latitude = updates.latitude;
   if (updates.longitude !== undefined) dbUpdates.longitude = updates.longitude;
   if (updates.assignedTo !== undefined) dbUpdates.assigned_to = updates.assignedTo;
+  // V2 fields
+  if (updates.status !== undefined) dbUpdates.status = updates.status;
+  if (updates.availabilityProfile !== undefined) dbUpdates.availability_profile = updates.availabilityProfile;
+  if (updates.deactivationReason !== undefined) dbUpdates.deactivation_reason = updates.deactivationReason;
+  if (updates.deactivatedAt !== undefined) dbUpdates.deactivated_at = updates.deactivatedAt;
+  if (updates.deactivatedBy !== undefined) dbUpdates.deactivated_by = updates.deactivatedBy;
   
   const { data, error } = await supabase
     .from('clozer_clients')
@@ -492,6 +591,11 @@ export function createTour(name: string, date: string, clientIds: string[]): Tou
     totalDistance: null,
     totalDuration: null,
     userId: currentUser?.id || null,
+    // V2 fields
+    startAddressId: null,
+    finalReport: null,
+    reportValidatedAt: null,
+    reportSentAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -537,6 +641,11 @@ export async function updateTourAsync(id: string, updates: Partial<Tour>): Promi
     dbUpdates.start_lng = updates.startPoint.lng;
     dbUpdates.start_address = updates.startPoint.address;
   }
+  // V2 fields
+  if (updates.startAddressId !== undefined) dbUpdates.start_address_id = updates.startAddressId;
+  if (updates.finalReport !== undefined) dbUpdates.final_report = updates.finalReport;
+  if (updates.reportValidatedAt !== undefined) dbUpdates.report_validated_at = updates.reportValidatedAt;
+  if (updates.reportSentAt !== undefined) dbUpdates.report_sent_at = updates.reportSentAt;
   
   const { data, error } = await supabase
     .from('clozer_tours')
@@ -849,6 +958,16 @@ const DEFAULT_SETTINGS: AppSettings = {
   companyPhone: '',
   companySiret: '',
   currentUserId: null,
+  // V2 fields
+  workingProfileHour: '17:30',
+  headquarters: {
+    address: '22 avenue de la République',
+    city: 'Le Gond-Pontouvre',
+    postalCode: '16160',
+    lat: 45.6685,
+    lng: 0.1512,
+  },
+  confirmationWords: ['TERMINER', 'VALIDER', 'CONFIRMER', 'ORANGE', 'ACCORD', 'CLOTURER', 'FINI'],
 };
 
 let settingsCache: AppSettings = DEFAULT_SETTINGS;
@@ -897,6 +1016,16 @@ export function updateSettings(updates: Partial<AppSettings>): AppSettings {
   if (updates.companyAddress !== undefined) dbUpdates.company_address = updates.companyAddress;
   if (updates.companyPhone !== undefined) dbUpdates.company_phone = updates.companyPhone;
   if (updates.companySiret !== undefined) dbUpdates.company_siret = updates.companySiret;
+  // V2 fields
+  if (updates.workingProfileHour !== undefined) dbUpdates.working_profile_hour = updates.workingProfileHour;
+  if (updates.headquarters) {
+    dbUpdates.headquarters_address = updates.headquarters.address;
+    dbUpdates.headquarters_city = updates.headquarters.city;
+    dbUpdates.headquarters_postal_code = updates.headquarters.postalCode;
+    dbUpdates.headquarters_lat = updates.headquarters.lat;
+    dbUpdates.headquarters_lng = updates.headquarters.lng;
+  }
+  if (updates.confirmationWords !== undefined) dbUpdates.confirmation_words = updates.confirmationWords;
   
   supabase.from('clozer_settings').update(dbUpdates).eq('id', '00000000-0000-0000-0000-000000000001');
   
@@ -1144,6 +1273,477 @@ export function deleteVisitReport(id: string): boolean {
   return true;
 }
 
+// ==================== CLIENT STATUS (V2) ====================
+
+export function getActiveClients(): Client[] {
+  return clientsCache.filter(c => c.status === 'active');
+}
+
+export function getInactiveClients(): Client[] {
+  return clientsCache.filter(c => c.status === 'inactive');
+}
+
+export async function deactivateClient(
+  clientId: string, 
+  reason: string, 
+  deactivatedBy: string
+): Promise<Client | null> {
+  const now = new Date().toISOString();
+  return updateClientAsync(clientId, {
+    status: 'inactive',
+    deactivationReason: reason,
+    deactivatedAt: now,
+    deactivatedBy: deactivatedBy,
+  });
+}
+
+export async function reactivateClient(clientId: string): Promise<Client | null> {
+  return updateClientAsync(clientId, {
+    status: 'active',
+    deactivationReason: null,
+    deactivatedAt: null,
+    deactivatedBy: null,
+  });
+}
+
+// ==================== TOUR NOTES (V2) ====================
+
+let tourNotesCache: TourNote[] = [];
+let tourNotesCacheLoaded = false;
+
+export async function getTourNotesAsync(tourId?: string): Promise<TourNote[]> {
+  let query = supabase
+    .from('clozer_tour_notes')
+    .select('*')
+    .order('created_at', { ascending: true });
+  
+  if (tourId) {
+    query = query.eq('tour_id', tourId);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    console.error('Error fetching tour notes:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbTourNote);
+}
+
+export function getTourNotes(tourId: string): TourNote[] {
+  return tourNotesCache
+    .filter(n => n.tourId === tourId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
+export async function addTourNote(tourId: string, content: string): Promise<TourNote | null> {
+  const { data, error } = await supabase
+    .from('clozer_tour_notes')
+    .insert({ tour_id: tourId, content })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error adding tour note:', error);
+    return null;
+  }
+  
+  const newNote = fromDbTourNote(data);
+  tourNotesCache.push(newNote);
+  return newNote;
+}
+
+export async function updateTourNote(id: string, content: string): Promise<TourNote | null> {
+  const { data, error } = await supabase
+    .from('clozer_tour_notes')
+    .update({ content })
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating tour note:', error);
+    return null;
+  }
+  
+  const updatedNote = fromDbTourNote(data);
+  const index = tourNotesCache.findIndex(n => n.id === id);
+  if (index !== -1) {
+    tourNotesCache[index] = updatedNote;
+  }
+  return updatedNote;
+}
+
+export async function deleteTourNote(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('clozer_tour_notes')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting tour note:', error);
+    return false;
+  }
+  
+  tourNotesCache = tourNotesCache.filter(n => n.id !== id);
+  return true;
+}
+
+// ==================== USER ADDRESSES (V2) ====================
+
+let userAddressesCache: UserAddress[] = [];
+let userAddressesCacheLoaded = false;
+
+export async function getUserAddressesAsync(userId?: string): Promise<UserAddress[]> {
+  let query = supabase
+    .from('clozer_user_addresses')
+    .select('*')
+    .order('name');
+  
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    console.error('Error fetching user addresses:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbUserAddress);
+}
+
+export function getUserAddresses(userId: string): UserAddress[] {
+  return userAddressesCache.filter(a => a.userId === userId);
+}
+
+export function getDefaultUserAddress(userId: string): UserAddress | undefined {
+  return userAddressesCache.find(a => a.userId === userId && a.isDefault);
+}
+
+export async function addUserAddress(
+  address: Omit<UserAddress, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<UserAddress | null> {
+  // If this is the first address or marked as default, unset other defaults
+  if (address.isDefault) {
+    await supabase
+      .from('clozer_user_addresses')
+      .update({ is_default: false })
+      .eq('user_id', address.userId);
+    
+    userAddressesCache = userAddressesCache.map(a => 
+      a.userId === address.userId ? { ...a, isDefault: false } : a
+    );
+  }
+  
+  const { data, error } = await supabase
+    .from('clozer_user_addresses')
+    .insert({
+      user_id: address.userId,
+      name: address.name,
+      address: address.address,
+      city: address.city,
+      postal_code: address.postalCode,
+      latitude: address.latitude,
+      longitude: address.longitude,
+      is_default: address.isDefault,
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error adding user address:', error);
+    return null;
+  }
+  
+  const newAddress = fromDbUserAddress(data);
+  userAddressesCache.push(newAddress);
+  return newAddress;
+}
+
+export async function updateUserAddress(
+  id: string, 
+  updates: Partial<Omit<UserAddress, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
+): Promise<UserAddress | null> {
+  const dbUpdates: any = {};
+  if (updates.name !== undefined) dbUpdates.name = updates.name;
+  if (updates.address !== undefined) dbUpdates.address = updates.address;
+  if (updates.city !== undefined) dbUpdates.city = updates.city;
+  if (updates.postalCode !== undefined) dbUpdates.postal_code = updates.postalCode;
+  if (updates.latitude !== undefined) dbUpdates.latitude = updates.latitude;
+  if (updates.longitude !== undefined) dbUpdates.longitude = updates.longitude;
+  if (updates.isDefault !== undefined) dbUpdates.is_default = updates.isDefault;
+  
+  // If setting as default, unset other defaults
+  if (updates.isDefault) {
+    const existingAddress = userAddressesCache.find(a => a.id === id);
+    if (existingAddress) {
+      await supabase
+        .from('clozer_user_addresses')
+        .update({ is_default: false })
+        .eq('user_id', existingAddress.userId)
+        .neq('id', id);
+      
+      userAddressesCache = userAddressesCache.map(a => 
+        a.userId === existingAddress.userId && a.id !== id ? { ...a, isDefault: false } : a
+      );
+    }
+  }
+  
+  const { data, error } = await supabase
+    .from('clozer_user_addresses')
+    .update(dbUpdates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating user address:', error);
+    return null;
+  }
+  
+  const updatedAddress = fromDbUserAddress(data);
+  const index = userAddressesCache.findIndex(a => a.id === id);
+  if (index !== -1) {
+    userAddressesCache[index] = updatedAddress;
+  }
+  return updatedAddress;
+}
+
+export async function deleteUserAddress(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('clozer_user_addresses')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting user address:', error);
+    return false;
+  }
+  
+  userAddressesCache = userAddressesCache.filter(a => a.id !== id);
+  return true;
+}
+
+// ==================== REACTIVATION REQUESTS (V2) ====================
+
+let reactivationRequestsCache: ReactivationRequest[] = [];
+let reactivationRequestsCacheLoaded = false;
+
+export async function getReactivationRequestsAsync(status?: ReactivationRequestStatus): Promise<ReactivationRequest[]> {
+  let query = supabase
+    .from('clozer_reactivation_requests')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (status) {
+    query = query.eq('status', status);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    console.error('Error fetching reactivation requests:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbReactivationRequest);
+}
+
+export function getReactivationRequests(status?: ReactivationRequestStatus): ReactivationRequest[] {
+  if (status) {
+    return reactivationRequestsCache.filter(r => r.status === status);
+  }
+  return reactivationRequestsCache;
+}
+
+export function getPendingReactivationRequests(): ReactivationRequest[] {
+  return reactivationRequestsCache.filter(r => r.status === 'pending');
+}
+
+export async function createReactivationRequest(
+  clientId: string,
+  requestedBy: string,
+  reason: string
+): Promise<ReactivationRequest | null> {
+  const { data, error } = await supabase
+    .from('clozer_reactivation_requests')
+    .insert({
+      client_id: clientId,
+      requested_by: requestedBy,
+      reason: reason,
+      status: 'pending',
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error creating reactivation request:', error);
+    return null;
+  }
+  
+  const newRequest = fromDbReactivationRequest(data);
+  reactivationRequestsCache.push(newRequest);
+  return newRequest;
+}
+
+export async function reviewReactivationRequest(
+  id: string,
+  reviewedBy: string,
+  approved: boolean,
+  comment?: string
+): Promise<ReactivationRequest | null> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('clozer_reactivation_requests')
+    .update({
+      status: approved ? 'approved' : 'rejected',
+      reviewed_by: reviewedBy,
+      review_comment: comment || null,
+      reviewed_at: now,
+    })
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error reviewing reactivation request:', error);
+    return null;
+  }
+  
+  const updatedRequest = fromDbReactivationRequest(data);
+  const index = reactivationRequestsCache.findIndex(r => r.id === id);
+  if (index !== -1) {
+    reactivationRequestsCache[index] = updatedRequest;
+  }
+  
+  // If approved, reactivate the client
+  if (approved) {
+    await reactivateClient(updatedRequest.clientId);
+  }
+  
+  return updatedRequest;
+}
+
+// ==================== USER SUPERVISORS (V2) ====================
+
+let userSupervisorsCache: UserSupervisor[] = [];
+let userSupervisorsCacheLoaded = false;
+
+export async function getUserSupervisorsAsync(userId?: string): Promise<UserSupervisor[]> {
+  let query = supabase
+    .from('clozer_user_supervisors')
+    .select('*');
+  
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    console.error('Error fetching user supervisors:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbUserSupervisor);
+}
+
+export function getUserSupervisors(userId: string): UserSupervisor[] {
+  return userSupervisorsCache.filter(s => s.userId === userId);
+}
+
+export function getSupervisorIds(userId: string): string[] {
+  return userSupervisorsCache
+    .filter(s => s.userId === userId)
+    .map(s => s.supervisorId);
+}
+
+export async function setUserSupervisors(userId: string, supervisorIds: string[]): Promise<boolean> {
+  // Delete existing supervisors
+  const { error: deleteError } = await supabase
+    .from('clozer_user_supervisors')
+    .delete()
+    .eq('user_id', userId);
+  
+  if (deleteError) {
+    console.error('Error deleting user supervisors:', deleteError);
+    return false;
+  }
+  
+  // Remove from cache
+  userSupervisorsCache = userSupervisorsCache.filter(s => s.userId !== userId);
+  
+  // Insert new supervisors
+  if (supervisorIds.length > 0) {
+    const inserts = supervisorIds.map(supervisorId => ({
+      user_id: userId,
+      supervisor_id: supervisorId,
+    }));
+    
+    const { data, error: insertError } = await supabase
+      .from('clozer_user_supervisors')
+      .insert(inserts)
+      .select();
+    
+    if (insertError) {
+      console.error('Error inserting user supervisors:', insertError);
+      return false;
+    }
+    
+    if (data) {
+      userSupervisorsCache.push(...data.map(fromDbUserSupervisor));
+    }
+  }
+  
+  return true;
+}
+
+// ==================== TOUR REPORT (V2) ====================
+
+export async function validateTourReport(
+  tourId: string, 
+  finalReport: string
+): Promise<Tour | null> {
+  const now = new Date().toISOString();
+  return updateTourAsync(tourId, {
+    finalReport,
+    reportValidatedAt: now,
+    status: 'completed',
+  } as Partial<Tour>);
+}
+
+export async function markTourReportSent(tourId: string): Promise<Tour | null> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('clozer_tours')
+    .update({ report_sent_at: now })
+    .eq('id', tourId)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error marking tour report as sent:', error);
+    return null;
+  }
+  
+  const updatedTour = fromDbTour(data);
+  const index = toursCache.findIndex(t => t.id === tourId);
+  if (index !== -1) {
+    toursCache[index] = updatedTour;
+  }
+  
+  return updatedTour;
+}
+
+// Get random confirmation word for tour end
+export function getRandomConfirmationWord(): string {
+  const words = settingsCache.confirmationWords || ['TERMINER', 'VALIDER', 'CONFIRMER'];
+  return words[Math.floor(Math.random() * words.length)];
+}
+
 // ==================== EXPORT / IMPORT DATA ====================
 
 export function exportAllData(): string {
@@ -1184,6 +1784,11 @@ export function clearAllData(): void {
   usersCache = [DEFAULT_ADMIN];
   settingsCache = DEFAULT_SETTINGS;
   reportsCache = [];
+  // V2 caches
+  tourNotesCache = [];
+  userAddressesCache = [];
+  reactivationRequestsCache = [];
+  userSupervisorsCache = [];
   setLocalCurrentUserId(null);
 }
 
@@ -1193,7 +1798,19 @@ export async function initializeData(): Promise<void> {
   console.log('Initializing data from Supabase...');
   
   try {
-    const [clients, tours, visits, quotes, users, settings, reports] = await Promise.all([
+    const [
+      clients, 
+      tours, 
+      visits, 
+      quotes, 
+      users, 
+      settings, 
+      reports,
+      tourNotes,
+      userAddresses,
+      reactivationRequests,
+      userSupervisors,
+    ] = await Promise.all([
       getClientsAsync(),
       getToursAsync(),
       getVisitsAsync(),
@@ -1201,6 +1818,10 @@ export async function initializeData(): Promise<void> {
       getUsersAsync(),
       getSettingsAsync(),
       getVisitReportsAsync(),
+      getTourNotesAsync(),
+      getUserAddressesAsync(),
+      getReactivationRequestsAsync(),
+      getUserSupervisorsAsync(),
     ]);
     
     clientsCache = clients;
@@ -1224,6 +1845,19 @@ export async function initializeData(): Promise<void> {
     reportsCache = reports;
     reportsCacheLoaded = true;
     
+    // V2 caches
+    tourNotesCache = tourNotes;
+    tourNotesCacheLoaded = true;
+    
+    userAddressesCache = userAddresses;
+    userAddressesCacheLoaded = true;
+    
+    reactivationRequestsCache = reactivationRequests;
+    reactivationRequestsCacheLoaded = true;
+    
+    userSupervisorsCache = userSupervisors;
+    userSupervisorsCacheLoaded = true;
+    
     console.log('Data initialized:', {
       clients: clients.length,
       tours: tours.length,
@@ -1231,6 +1865,10 @@ export async function initializeData(): Promise<void> {
       quotes: quotes.length,
       users: users.length,
       reports: reports.length,
+      tourNotes: tourNotes.length,
+      userAddresses: userAddresses.length,
+      reactivationRequests: reactivationRequests.length,
+      userSupervisors: userSupervisors.length,
     });
   } catch (error) {
     console.error('Error initializing data:', error);

@@ -1,9 +1,31 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Lazy initialization to prevent build-time errors when env vars are not available
+let supabaseInstance: SupabaseClient | null = null;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!url || !key) {
+      throw new Error(
+        'Missing Supabase environment variables. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+      );
+    }
+    
+    supabaseInstance = createClient(url, key);
+  }
+  return supabaseInstance;
+}
+
+// Legacy export for backward compatibility - use getSupabase() for new code
+// This getter ensures lazy initialization
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_, prop) {
+    return (getSupabase() as any)[prop];
+  },
+});
 
 // Types for database tables
 export interface DbUser {
@@ -29,6 +51,11 @@ export interface DbClient {
   latitude: number | null;
   longitude: number | null;
   assigned_to: string | null;
+  status: 'active' | 'inactive';
+  availability_profile: 'retired' | 'working' | null;
+  deactivation_reason: string | null;
+  deactivated_at: string | null;
+  deactivated_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +71,10 @@ export interface DbTour {
   total_distance: number | null;
   total_duration: number | null;
   user_id: string | null;
+  start_address_id: string | null;
+  final_report: string | null;
+  report_validated_at: string | null;
+  report_sent_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -109,6 +140,56 @@ export interface DbSettings {
   company_address: string;
   company_phone: string;
   company_siret: string;
+  working_profile_hour: string;
+  headquarters_address: string;
+  headquarters_city: string;
+  headquarters_postal_code: string;
+  headquarters_lat: number | null;
+  headquarters_lng: number | null;
+  confirmation_words: string[];
   created_at: string;
   updated_at: string;
+}
+
+// ==================== NEW INTERFACES FOR V2 ====================
+
+export interface DbUserAddress {
+  id: string;
+  user_id: string;
+  name: string;
+  address: string;
+  city: string;
+  postal_code: string;
+  latitude: number | null;
+  longitude: number | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbTourNote {
+  id: string;
+  tour_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbReactivationRequest {
+  id: string;
+  client_id: string;
+  requested_by: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by: string | null;
+  review_comment: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface DbUserSupervisor {
+  id: string;
+  user_id: string;
+  supervisor_id: string;
+  created_at: string;
 }

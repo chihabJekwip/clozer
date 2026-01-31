@@ -11,17 +11,18 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { RotateCcw, Home, Calendar, MessageSquare } from 'lucide-react';
+import { RotateCcw, Home, Calendar, MessageSquare, Route } from 'lucide-react';
 
 interface AbsentModalProps {
   open: boolean;
   onClose: () => void;
   client: Client;
-  onSelectStrategy: (strategy: AbsentStrategy, notes?: string) => void;
+  onSelectStrategy: (strategy: AbsentStrategy, notes?: string, shouldReoptimize?: boolean) => void;
   estimatedExtraTime?: {
     afterNext: number; // minutes supplémentaires
     onReturn: number;
   };
+  remainingVisits?: number; // V2: Number of remaining visits for reoptimize info
 }
 
 export default function AbsentModal({
@@ -30,15 +31,24 @@ export default function AbsentModal({
   client,
   onSelectStrategy,
   estimatedExtraTime,
+  remainingVisits = 0,
 }: AbsentModalProps) {
   const [notes, setNotes] = useState('');
   const [selectedStrategy, setSelectedStrategy] = useState<AbsentStrategy | null>(null);
+  const [wantsReoptimize, setWantsReoptimize] = useState(true); // V2: Default to true
+
+  // V2: Strategies that benefit from re-optimization
+  const strategyCanReoptimize = (strategy: AbsentStrategy | null) => {
+    return strategy === 'on_return' || strategy === 'another_day';
+  };
 
   const handleConfirm = () => {
     if (selectedStrategy) {
-      onSelectStrategy(selectedStrategy, notes || undefined);
+      const shouldReoptimize = strategyCanReoptimize(selectedStrategy) && wantsReoptimize && remainingVisits > 1;
+      onSelectStrategy(selectedStrategy, notes || undefined, shouldReoptimize);
       setNotes('');
       setSelectedStrategy(null);
+      setWantsReoptimize(true);
       onClose();
     }
   };
@@ -136,6 +146,29 @@ export default function AbsentModal({
             rows={2}
           />
         </div>
+
+        {/* V2: Re-optimization option */}
+        {strategyCanReoptimize(selectedStrategy) && remainingVisits > 1 && (
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={wantsReoptimize}
+                onChange={(e) => setWantsReoptimize(e.target.checked)}
+                className="mt-1 rounded border-blue-300"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 font-medium text-blue-700">
+                  <Route className="w-4 h-4" />
+                  Recalculer l'itinéraire
+                </div>
+                <p className="text-sm text-blue-600 mt-0.5">
+                  Optimiser le parcours pour les {remainingVisits} visites restantes
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
 
         {/* Boutons d'action */}
         <div className="flex gap-2 mt-4">

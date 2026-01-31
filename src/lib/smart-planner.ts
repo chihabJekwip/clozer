@@ -1,8 +1,8 @@
 // Système intelligent de planification de tournées
 // Analyse automatiquement les clients et propose des tournées optimisées
 
-import { Client, Tour, Visit, AppSettings, LatLng } from '@/types';
-import { getClients, getVisits, getTours, getSettings, getClientsByUser } from './storage';
+import { Client, Tour, Visit, AppSettings, LatLng, AvailabilityProfile } from '@/types';
+import { getClients, getVisits, getTours, getSettings, getClientsByUser, getActiveClients } from './storage';
 import { optimizeTour } from './optimization';
 
 export interface TourSuggestion {
@@ -82,6 +82,7 @@ function getSubZone(codePostal: string, ville: string): string {
 }
 
 // Obtenir tous les clients qui n'ont pas encore été visités (jamais en tournée "completed")
+// Exclut les clients inactifs
 export function getUnvisitedClients(userId?: string): Client[] {
   // Si userId est fourni, filtrer par utilisateur assigné
   const allClients = userId ? getClientsByUser(userId) : getClients();
@@ -96,11 +97,12 @@ export function getUnvisitedClients(userId?: string): Client[] {
     }
   });
   
-  // Retourner les clients non visités avec coordonnées GPS (pour les tournées)
+  // Retourner les clients non visités, actifs, avec coordonnées GPS (pour les tournées)
   return allClients.filter(client => 
     !visitedClientIds.has(client.id) && 
     client.latitude !== null && 
-    client.longitude !== null
+    client.longitude !== null &&
+    client.status === 'active' // V2: Exclure les clients inactifs
   );
 }
 
@@ -186,6 +188,38 @@ function estimateTourDuration(
   return Math.round(travelMinutes + visitMinutes);
 }
 
+// V2: Trier les clients par profil de disponibilité
+// Les clients "working" (actifs) doivent être visités après l'heure configurée (ex: 17h30)
+export function sortClientsByAvailability(
+  clients: Client[],
+  settings: AppSettings
+): { earlyClients: Client[]; lateClients: Client[] } {
+  const earlyClients: Client[] = []; // Retraités ou non définis - peuvent être visités n'importe quand
+  const lateClients: Client[] = []; // Actifs (travailleurs) - à visiter après workingProfileHour
+  
+  clients.forEach(client => {
+    if (client.availabilityProfile === 'working') {
+      lateClients.push(client);
+    } else {
+      earlyClients.push(client);
+    }
+  });
+  
+  return { earlyClients, lateClients };
+}
+
+// V2: Calculer combien de clients "actifs" peuvent être visités en fin de journée
+function getLateDayCapacity(settings: AppSettings): number {
+  const workingHour = settings.workingProfileHour || '17:30';
+  const [lateStartH, lateStartM] = workingHour.split(':').map(Number);
+  const [endH, endM] = settings.workEndTime.split(':').map(Number);
+  
+  const availableMinutes = (endH * 60 + endM) - (lateStartH * 60 + lateStartM);
+  const avgTimePerClient = settings.defaultVisitDuration + 15;
+  
+  return Math.max(0, Math.floor(availableMinutes / avgTimePerClient));
+}
+
 // Déterminer combien de clients peuvent être visités en une journée
 function getMaxClientsPerDay(settings: AppSettings): number {
   const [startH, startM] = settings.workStartTime.split(':').map(Number);
@@ -206,28 +240,48 @@ function getMaxClientsPerDay(settings: AppSettings): number {
   return Math.floor(availableMinutes / avgTimePerClient);
 }
 
-// Générer une suggestion de tournée pour un groupe de clients
+// V2: Générer une suggestion de tournée pour un groupe de clients
+// Trie les clients par profil de disponibilité pour optimiser la journée
 function createTourSuggestion(
   clients: Client[],
   zone: string,
   date: string,
   priority: 'high' | 'medium' | 'low',
-  reason: string
+  reason: string,
+  settings?: AppSettings
 ): TourSuggestion {
-  const distance = estimateTourDistance(clients);
-  const duration = estimateTourDuration(distance, clients.length);
+  // V2: Trier les clients par disponibilité
+  // Les "retraités" et "non définis" en premier, les "actifs" (travailleurs) en dernier
+  const sortedClients = [...clients].sort((a, b) => {
+    const aIsWorking = a.availabilityProfile === 'working' ? 1 : 0;
+    const bIsWorking = b.availabilityProfile === 'working' ? 1 : 0;
+    return aIsWorking - bIsWorking;
+  });
+  
+  const distance = estimateTourDistance(sortedClients);
+  const duration = estimateTourDuration(distance, sortedClients.length);
+  
+  // Count working clients
+  const workingCount = sortedClients.filter(c => c.availabilityProfile === 'working').length;
+  const hasWorkingClients = workingCount > 0;
+  
+  // Enhance reason with availability info
+  let enhancedReason = reason;
+  if (hasWorkingClients && settings) {
+    enhancedReason += ` (${workingCount} client${workingCount > 1 ? 's' : ''} actif${workingCount > 1 ? 's' : ''} programmé${workingCount > 1 ? 's' : ''} après ${settings.workingProfileHour})`;
+  }
   
   return {
     id: `suggestion-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: `Tournée ${zone}`,
     date,
-    clients,
+    clients: sortedClients,
     estimatedDistance: Math.round(distance * 10) / 10,
     estimatedDuration: duration,
-    estimatedVisits: clients.length,
+    estimatedVisits: sortedClients.length,
     zone,
     priority,
-    reason,
+    reason: enhancedReason,
   };
 }
 
@@ -283,7 +337,8 @@ export function generateSmartPlan(userId?: string): DailyPlan {
       zone,
       today,
       priority,
-      reason
+      reason,
+      settings
     ));
   });
   
@@ -308,7 +363,8 @@ export function generateSmartPlan(userId?: string): DailyPlan {
       'Proximité Angoulême',
       today,
       'high',
-      `${nearestClients.length} clients les plus proches du bureau (rayon ~${Math.round(avgDistance)} km). Tournée la plus rapide.`
+      `${nearestClients.length} clients les plus proches du bureau (rayon ~${Math.round(avgDistance)} km). Tournée la plus rapide.`,
+      settings
     ));
   }
   
@@ -351,6 +407,7 @@ export function getInsights(userId?: string): {
   visitedClients: number;
   pendingClients: number;
   notGeocodedClients: number;
+  inactiveClients: number;
   completionRate: number;
   mostVisitedZone: string | null;
   suggestedNextAction: string;
@@ -358,23 +415,28 @@ export function getInsights(userId?: string): {
   const allClients = userId ? getClientsByUser(userId) : getClients();
   const visitedClientIds = getVisitedClientIds();
   
-  // Compter les vrais visités (clients avec une visite completed)
-  const visited = allClients.filter(c => visitedClientIds.has(c.id)).length;
+  // V2: Count active and inactive clients
+  const activeClients = allClients.filter(c => c.status === 'active');
+  const inactiveClients = allClients.filter(c => c.status === 'inactive').length;
   
-  // Clients non géolocalisés
-  const notGeocoded = allClients.filter(c => !c.latitude || !c.longitude).length;
+  // Compter les vrais visités (clients avec une visite completed) - seulement actifs
+  const visited = activeClients.filter(c => visitedClientIds.has(c.id)).length;
   
-  // Clients à visiter (non visités et géolocalisés)
-  const pendingClients = allClients.filter(c => 
+  // Clients non géolocalisés (actifs seulement)
+  const notGeocoded = activeClients.filter(c => !c.latitude || !c.longitude).length;
+  
+  // Clients à visiter (non visités, géolocalisés, actifs)
+  const pendingClients = activeClients.filter(c => 
     !visitedClientIds.has(c.id) && c.latitude && c.longitude
   ).length;
   
-  const completionRate = allClients.length > 0 
-    ? Math.round((visited / allClients.length) * 100) 
+  // V2: Completion rate based on active clients only
+  const completionRate = activeClients.length > 0 
+    ? Math.round((visited / activeClients.length) * 100) 
     : 0;
   
   const visitedByZone = new Map<string, number>();
-  allClients.forEach(client => {
+  activeClients.forEach(client => {
     if (visitedClientIds.has(client.id)) {
       const zone = getSubZone(client.codePostal, client.ville);
       visitedByZone.set(zone, (visitedByZone.get(zone) || 0) + 1);
@@ -392,12 +454,14 @@ export function getInsights(userId?: string): {
   
   // Suggestion d'action
   let suggestedNextAction = '';
-  if (allClients.length === 0) {
+  if (activeClients.length === 0 && allClients.length === 0) {
     suggestedNextAction = "Importez votre fichier Excel de clients pour commencer.";
+  } else if (activeClients.length === 0 && inactiveClients > 0) {
+    suggestedNextAction = `Tous vos clients (${inactiveClients}) sont inactifs. Réactivez-les ou importez de nouveaux clients.`;
   } else if (notGeocoded > 0) {
     suggestedNextAction = `${notGeocoded} clients sans géolocalisation. Corrigez leurs adresses ou lancez le géocodage.`;
   } else if (pendingClients === 0 && visited > 0) {
-    suggestedNextAction = "Félicitations ! Tous les clients ont été visités. Importez de nouveaux clients.";
+    suggestedNextAction = "Félicitations ! Tous les clients actifs ont été visités. Importez de nouveaux clients.";
   } else if (completionRate < 25) {
     suggestedNextAction = `${pendingClients} clients à visiter. Lancez une tournée optimisée pour démarrer !`;
   } else if (completionRate < 75) {
@@ -407,10 +471,11 @@ export function getInsights(userId?: string): {
   }
   
   return {
-    totalClients: allClients.length,
+    totalClients: activeClients.length,
     visitedClients: visited,
     pendingClients,
     notGeocodedClients: notGeocoded,
+    inactiveClients,
     completionRate,
     mostVisitedZone,
     suggestedNextAction,
