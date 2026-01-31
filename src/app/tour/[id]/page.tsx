@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import TourProgress from '@/components/tour/TourProgress';
 import VisitList from '@/components/tour/VisitList';
 import AbsentModal from '@/components/tour/AbsentModal';
+import ReportModal from '@/components/tour/ReportModal';
 import QuoteForm from '@/components/quote/QuoteForm';
 import {
   getClients,
@@ -19,6 +20,8 @@ import {
   updateVisitsOrder,
   addQuote,
   getSettings,
+  addVisitReport,
+  getCurrentUser,
 } from '@/lib/storage';
 import { getFullRoute, getDistanceMatrix } from '@/lib/routing';
 import { optimizeTour } from '@/lib/optimization';
@@ -64,6 +67,8 @@ export default function TourPage() {
   const [showQuoteForm, setShowQuoteForm] = useState(false);
   const [quoteClient, setQuoteClient] = useState<Client | null>(null);
   const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportVisit, setReportVisit] = useState<Visit | null>(null);
 
   // Charger les données
   useEffect(() => {
@@ -203,9 +208,32 @@ export default function TourPage() {
     }
   };
 
-  // Marquer une visite comme terminée
+  // Ouvrir le modal de rapport avant de terminer la visite
   const handleMarkCompleted = (visitId: string) => {
-    updateVisit(visitId, {
+    const visit = visits.find(v => v.id === visitId);
+    if (visit) {
+      setReportVisit(visit);
+      setShowReportModal(true);
+    }
+  };
+
+  // Sauvegarder le rapport et terminer la visite
+  const handleSaveReportAndComplete = (reportContent: string) => {
+    if (!reportVisit) return;
+
+    const currentUser = getCurrentUser();
+    const client = clients.find(c => c.id === reportVisit.clientId);
+
+    // Sauvegarder le rapport
+    addVisitReport({
+      visitId: reportVisit.id,
+      clientId: reportVisit.clientId,
+      content: reportContent,
+      createdBy: currentUser?.id || null,
+    });
+
+    // Marquer la visite comme terminée
+    updateVisit(reportVisit.id, {
       status: 'completed',
       visitedAt: new Date().toISOString(),
     });
@@ -229,6 +257,10 @@ export default function TourPage() {
       updateTour(tourId, { status: 'completed' });
       setTour(getTour(tourId) || null);
     }
+
+    // Fermer le modal
+    setShowReportModal(false);
+    setReportVisit(null);
   };
 
   // Gérer l'absence d'un client
@@ -537,6 +569,20 @@ export default function TourPage() {
             afterNext: 8,
             onReturn: 15,
           }}
+        />
+      )}
+
+      {/* Modal rapport de visite */}
+      {reportVisit && (
+        <ReportModal
+          open={showReportModal}
+          onClose={() => {
+            setShowReportModal(false);
+            setReportVisit(null);
+          }}
+          client={clients.find(c => c.id === reportVisit.clientId)!}
+          visitId={reportVisit.id}
+          onSaveReport={handleSaveReportAndComplete}
         />
       )}
     </div>

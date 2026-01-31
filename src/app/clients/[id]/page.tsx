@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Client, Visit, Quote, Tour } from '@/types';
+import { Client, Visit, Quote, Tour, VisitReport } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,8 @@ import {
   getVisits,
   getTours,
   getQuotesByClient,
+  getReportsByClient,
+  updateVisitReport,
 } from '@/lib/storage';
 import { geocodeAddressSmart } from '@/lib/geocoding';
 import { formatPhone, formatDate, formatTime }from '@/lib/utils';
@@ -47,7 +49,10 @@ import {
   XCircle,
   CheckCircle2,
   CircleDashed,
+  Mic,
+  MessageSquare,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';
 
 interface ClientVisitHistory {
@@ -63,10 +68,13 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [visitHistory, setVisitHistory] = useState<ClientVisitHistory[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [reports, setReports] = useState<VisitReport[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingReport, setEditingReport] = useState<VisitReport | null>(null);
+  const [editReportContent, setEditReportContent] = useState('');
 
   // Form state for editing
   const [editForm, setEditForm] = useState({
@@ -122,6 +130,10 @@ export default function ClientDetailPage() {
       setQuotes(clientQuotes.sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ));
+
+      // Get visit reports
+      const clientReports = getReportsByClient(clientId);
+      setReports(clientReports);
 
       setIsLoading(false);
     };
@@ -225,6 +237,32 @@ export default function ClientDetailPage() {
       default:
         return <Badge variant="secondary">Brouillon</Badge>;
     }
+  };
+
+  // Edit report
+  const handleEditReport = (report: VisitReport) => {
+    setEditingReport(report);
+    setEditReportContent(report.content);
+  };
+
+  // Save report changes
+  const handleSaveReport = () => {
+    if (!editingReport || !editReportContent.trim()) return;
+
+    updateVisitReport(editingReport.id, {
+      content: editReportContent.trim(),
+    });
+
+    // Reload reports
+    setReports(getReportsByClient(clientId));
+    setEditingReport(null);
+    setEditReportContent('');
+  };
+
+  // Get tour name for a visit
+  const getTourNameForVisit = (visitId: string): string => {
+    const historyItem = visitHistory.find(h => h.visit.id === visitId);
+    return historyItem?.tour?.name || 'Tournée inconnue';
   };
 
   if (isLoading) {
@@ -468,6 +506,76 @@ export default function ClientDetailPage() {
           </CardContent>
         </Card>
 
+        {/* Visit Reports Card */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                Rapports de visite
+              </CardTitle>
+              <Badge variant="secondary">{reports.length}</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {reports.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Mic className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Aucun rapport de visite</p>
+                <p className="text-sm">Les rapports sont créés lors de la clôture d'une visite</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {reports.map((report) => (
+                  <div
+                    key={report.id}
+                    className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="text-center min-w-[50px]">
+                          <div className="text-lg font-bold">
+                            {new Date(report.createdAt).getDate()}
+                          </div>
+                          <div className="text-xs text-muted-foreground uppercase">
+                            {new Date(report.createdAt).toLocaleDateString('fr-FR', { month: 'short' })}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">
+                            {getTourNameForVisit(report.visitId)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(report.createdAt).toLocaleTimeString('fr-FR', { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditReport(report)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap pl-[58px]">
+                      {report.content}
+                    </p>
+                    {report.updatedAt !== report.createdAt && (
+                      <p className="text-xs text-muted-foreground mt-2 pl-[58px]">
+                        Modifié le {new Date(report.updatedAt).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Quotes Card */}
         <Card>
           <CardHeader className="pb-3">
@@ -530,12 +638,18 @@ export default function ClientDetailPage() {
         {/* Stats Card */}
         <Card>
           <CardContent className="p-4">
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-4 text-center">
               <div>
                 <div className="text-2xl font-bold text-primary">
                   {visitHistory.filter(v => v.visit.status === 'completed').length}
                 </div>
                 <div className="text-xs text-muted-foreground">Visites réussies</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-blue-500">
+                  {reports.length}
+                </div>
+                <div className="text-xs text-muted-foreground">Rapports</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-orange-500">
@@ -695,6 +809,69 @@ export default function ClientDetailPage() {
               <Trash2 className="w-4 h-4 mr-2" />
               Supprimer
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Report Dialog */}
+      <Dialog open={!!editingReport} onOpenChange={(open) => !open && setEditingReport(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              Modifier le rapport
+            </DialogTitle>
+            <DialogDescription>
+              {editingReport && (
+                <>
+                  Rapport du {new Date(editingReport.createdAt).toLocaleDateString('fr-FR')} - {getTourNameForVisit(editingReport.visitId)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Indication pour la dictée vocale */}
+            <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+              <Mic className="w-5 h-5 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">Astuce : Dictée vocale</p>
+                <p className="text-blue-600">
+                  Utilisez l'icône <span className="inline-block mx-1 text-lg">🎤</span> 
+                  de votre clavier pour dicter.
+                </p>
+              </div>
+            </div>
+
+            <Textarea
+              value={editReportContent}
+              onChange={(e) => setEditReportContent(e.target.value)}
+              rows={6}
+              className="resize-none"
+              placeholder="Contenu du rapport..."
+            />
+
+            <div className="text-xs text-muted-foreground text-right">
+              {editReportContent.length} caractères
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setEditingReport(null)}
+                className="flex-1"
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={handleSaveReport}
+                className="flex-1"
+                disabled={!editReportContent.trim()}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Enregistrer
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

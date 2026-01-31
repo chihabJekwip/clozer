@@ -1,7 +1,7 @@
 // Stockage local des données avec localStorage et fichiers JSON
 // Alternative simple à SQLite pour éviter les problèmes de compilation native
 
-import { Client, Tour, Visit, Quote, AppSettings, User } from '@/types';
+import { Client, Tour, Visit, Quote, AppSettings, User, VisitReport } from '@/types';
 import { generateId } from './utils';
 import { ANGOULEME_COORDINATES } from './geocoding';
 
@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
   SETTINGS: 'clozer_settings',
   USERS: 'clozer_users',
   CURRENT_USER: 'clozer_current_user',
+  VISIT_REPORTS: 'clozer_visit_reports',
 };
 
 // Utilitaires de stockage
@@ -439,6 +440,67 @@ export function assignClientsToUser(clientIds: string[], userId: string | null):
   saveClients(updatedClients);
 }
 
+// ==================== VISIT REPORTS ====================
+
+export function getVisitReports(): VisitReport[] {
+  return getFromStorage<VisitReport[]>(STORAGE_KEYS.VISIT_REPORTS, []);
+}
+
+export function saveVisitReports(reports: VisitReport[]): void {
+  saveToStorage(STORAGE_KEYS.VISIT_REPORTS, reports);
+}
+
+export function getVisitReport(id: string): VisitReport | undefined {
+  return getVisitReports().find(r => r.id === id);
+}
+
+export function getReportsByVisit(visitId: string): VisitReport[] {
+  return getVisitReports()
+    .filter(r => r.visitId === visitId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function getReportsByClient(clientId: string): VisitReport[] {
+  return getVisitReports()
+    .filter(r => r.clientId === clientId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function addVisitReport(report: Omit<VisitReport, 'id' | 'createdAt' | 'updatedAt'>): VisitReport {
+  const newReport: VisitReport = {
+    ...report,
+    id: generateId(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const reports = getVisitReports();
+  reports.push(newReport);
+  saveVisitReports(reports);
+  return newReport;
+}
+
+export function updateVisitReport(id: string, updates: Partial<VisitReport>): VisitReport | null {
+  const reports = getVisitReports();
+  const index = reports.findIndex(r => r.id === id);
+  if (index === -1) return null;
+  
+  reports[index] = {
+    ...reports[index],
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+  saveVisitReports(reports);
+  return reports[index];
+}
+
+export function deleteVisitReport(id: string): boolean {
+  const reports = getVisitReports();
+  const filtered = reports.filter(r => r.id !== id);
+  if (filtered.length === reports.length) return false;
+  saveVisitReports(filtered);
+  return true;
+}
+
 // ==================== EXPORT / IMPORT DATA ====================
 
 export function exportAllData(): string {
@@ -449,6 +511,7 @@ export function exportAllData(): string {
     quotes: getQuotes(),
     users: getUsers(),
     settings: getSettings(),
+    visitReports: getVisitReports(),
     exportedAt: new Date().toISOString(),
   };
   return JSON.stringify(data, null, 2);
@@ -463,6 +526,7 @@ export function importAllData(jsonString: string): boolean {
     if (data.quotes) saveQuotes(data.quotes);
     if (data.users) saveUsers(data.users);
     if (data.settings) saveToStorage(STORAGE_KEYS.SETTINGS, data.settings);
+    if (data.visitReports) saveVisitReports(data.visitReports);
     return true;
   } catch {
     return false;

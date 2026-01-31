@@ -164,3 +164,14 @@ export interface GeocodingResult {
   displayName: string;
   confidence: number;
 }
+
+// Rapport de visite (dictée vocale ou texte)
+export interface VisitReport {
+  id: string;
+  visitId: string;
+  clientId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null; // ID du commercial
+}
