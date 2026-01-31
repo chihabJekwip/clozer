@@ -10,6 +10,8 @@ import TourProgress from '@/components/tour/TourProgress';
 import VisitList from '@/components/tour/VisitList';
 import AbsentModal from '@/components/tour/AbsentModal';
 import ReportModal from '@/components/tour/ReportModal';
+import TourNotesPanel from '@/components/tour/TourNotesPanel';
+import TourEndConfirmation from '@/components/tour/TourEndConfirmation';
 import QuoteForm from '@/components/quote/QuoteForm';
 import {
   getClients,
@@ -36,6 +38,8 @@ import {
   Navigation,
   FileText,
   Home,
+  StickyNote,
+  CheckSquare,
 } from 'lucide-react';
 
 // Import dynamique de la carte pour éviter les erreurs SSR
@@ -69,6 +73,8 @@ export default function TourPage() {
   const [estimatedEndTime, setEstimatedEndTime] = useState<Date | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportVisit, setReportVisit] = useState<Visit | null>(null);
+  const [showNotesPanel, setShowNotesPanel] = useState(false);
+  const [showEndConfirmation, setShowEndConfirmation] = useState(false);
 
   // Charger les données
   useEffect(() => {
@@ -327,6 +333,19 @@ export default function TourPage() {
     setQuoteClient(null);
   };
 
+  // Demander confirmation pour terminer la tournée
+  const handleRequestEndTour = () => {
+    setShowEndConfirmation(true);
+  };
+
+  // Confirmer la fin de la tournée
+  const handleConfirmEndTour = () => {
+    updateTour(tourId, { status: 'completed' });
+    setTour(getTour(tourId) || null);
+    // Rediriger vers la page de rapport
+    router.push(`/tour/${tourId}/report`);
+  };
+
   if (!tour) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -449,6 +468,17 @@ export default function TourPage() {
                 Navigation
               </Button>
             )}
+            {tour.status === 'in_progress' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRequestEndTour}
+                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+              >
+                <CheckSquare className="w-4 h-4 lg:mr-2" />
+                <span className="hidden lg:inline">Terminer</span>
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -542,9 +572,20 @@ export default function TourPage() {
         </div>
       </div>
 
-      {/* Bouton de navigation flottant - Mobile uniquement */}
-      {currentClient && currentClient.latitude && currentClient.longitude && viewMode !== 'list' && (
-        <div className="fixed bottom-4 right-4 z-10 lg:hidden">
+      {/* Boutons flottants - Mobile */}
+      <div className="fixed bottom-4 right-4 z-10 flex flex-col gap-3 lg:hidden">
+        {/* Bouton Notes */}
+        <Button
+          size="lg"
+          variant="outline"
+          className="rounded-full shadow-lg h-14 w-14 bg-white"
+          onClick={() => setShowNotesPanel(true)}
+        >
+          <StickyNote className="w-6 h-6 text-blue-600" />
+        </Button>
+        
+        {/* Bouton Navigation */}
+        {currentClient && currentClient.latitude && currentClient.longitude && viewMode !== 'list' && (
           <Button
             size="lg"
             className="rounded-full shadow-lg h-14 w-14"
@@ -552,8 +593,20 @@ export default function TourPage() {
           >
             <Navigation className="w-6 h-6" />
           </Button>
-        </div>
-      )}
+        )}
+      </div>
+      
+      {/* Bouton Notes - Desktop */}
+      <div className="hidden lg:flex fixed bottom-4 left-4 z-10">
+        <Button
+          variant="outline"
+          className="shadow-lg gap-2 bg-white"
+          onClick={() => setShowNotesPanel(true)}
+        >
+          <StickyNote className="w-5 h-5 text-blue-600" />
+          Notes de tournée
+        </Button>
+      </div>
 
       {/* Modal client absent */}
       {absentVisit && (
@@ -585,6 +638,27 @@ export default function TourPage() {
           onSaveReport={handleSaveReportAndComplete}
         />
       )}
+
+      {/* Panel de notes de tournée */}
+      <TourNotesPanel
+        open={showNotesPanel}
+        onClose={() => setShowNotesPanel(false)}
+        tourId={tourId}
+        tourName={tour.name}
+      />
+
+      {/* Modal de confirmation fin de tournée */}
+      <TourEndConfirmation
+        open={showEndConfirmation}
+        onClose={() => setShowEndConfirmation(false)}
+        tourName={tour.name}
+        onConfirm={handleConfirmEndTour}
+        stats={{
+          completed: visits.filter(v => v.status === 'completed').length,
+          total: visits.length,
+          absent: visits.filter(v => v.status === 'absent' || v.status === 'skipped').length,
+        }}
+      />
     </div>
   );
 }

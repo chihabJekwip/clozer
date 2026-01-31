@@ -27,12 +27,14 @@ import {
   User,
   Save,
   ChevronRight,
+  UserX,
 } from 'lucide-react';
+import { ClientStatusIcon, AvailabilityIcon } from '@/components/client/ClientStatusBadge';
 import Link from 'next/link';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { useUser } from '@/contexts/UserContext';
 
-type FilterType = 'all' | 'geocoded' | 'not_geocoded';
+type FilterType = 'all' | 'geocoded' | 'not_geocoded' | 'active' | 'inactive';
 
 export default function ClientsPage() {
   return (
@@ -84,6 +86,10 @@ function ClientsContent() {
       result = result.filter(c => c.latitude && c.longitude);
     } else if (filter === 'not_geocoded') {
       result = result.filter(c => !c.latitude || !c.longitude);
+    } else if (filter === 'active') {
+      result = result.filter(c => c.status === 'active');
+    } else if (filter === 'inactive') {
+      result = result.filter(c => c.status === 'inactive');
     }
 
     // Apply search
@@ -186,6 +192,8 @@ function ClientsContent() {
   // Stats
   const geocodedCount = clients.filter(c => c.latitude && c.longitude).length;
   const notGeocodedCount = clients.length - geocodedCount;
+  const activeCount = clients.filter(c => c.status === 'active').length;
+  const inactiveCount = clients.filter(c => c.status === 'inactive').length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -204,7 +212,7 @@ function ClientsContent() {
               <div>
                 <h1 className="font-semibold text-lg">Base de données clients</h1>
                 <p className="text-sm text-muted-foreground">
-                  {clients.length} clients • {geocodedCount} géolocalisés • {notGeocodedCount} à corriger
+                  {clients.length} clients • {activeCount} actifs • {inactiveCount} inactifs
                 </p>
               </div>
             </div>
@@ -221,7 +229,7 @@ function ClientsContent() {
                 className="pl-10"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant={filter === 'all' ? 'default' : 'outline'}
                 size="sm"
@@ -230,12 +238,21 @@ function ClientsContent() {
                 Tous ({clients.length})
               </Button>
               <Button
-                variant={filter === 'geocoded' ? 'default' : 'outline'}
+                variant={filter === 'active' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setFilter('geocoded')}
+                onClick={() => setFilter('active')}
+                className={filter === 'active' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 <CheckCircle className="w-4 h-4 mr-1" />
-                OK ({geocodedCount})
+                Actifs ({activeCount})
+              </Button>
+              <Button
+                variant={filter === 'inactive' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setFilter('inactive')}
+              >
+                <UserX className="w-4 h-4 mr-1" />
+                Inactifs ({inactiveCount})
               </Button>
               <Button
                 variant={filter === 'not_geocoded' ? 'destructive' : 'outline'}
@@ -243,7 +260,7 @@ function ClientsContent() {
                 onClick={() => setFilter('not_geocoded')}
               >
                 <AlertCircle className="w-4 h-4 mr-1" />
-                À corriger ({notGeocodedCount})
+                À géolocaliser ({notGeocodedCount})
               </Button>
             </div>
           </div>
@@ -267,7 +284,13 @@ function ClientsContent() {
             {filteredClients.map(client => (
               <Card 
                 key={client.id}
-                className={`cursor-pointer hover:shadow-md transition-shadow ${!client.latitude || !client.longitude ? 'border-orange-300 bg-orange-50/50' : ''}`}
+                className={`cursor-pointer hover:shadow-md transition-shadow ${
+                  client.status === 'inactive' 
+                    ? 'border-gray-300 bg-gray-50 opacity-70' 
+                    : !client.latitude || !client.longitude 
+                      ? 'border-orange-300 bg-orange-50/50' 
+                      : ''
+                }`}
               >
                 <Link href={`/clients/${client.id}`}>
                   <CardContent className="p-4">
@@ -275,9 +298,11 @@ function ClientsContent() {
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold">
+                          <h3 className={`font-semibold ${client.status === 'inactive' ? 'text-gray-500' : ''}`}>
                             {client.civilite} {client.nom}
                           </h3>
+                          <ClientStatusIcon status={client.status} />
+                          <AvailabilityIcon profile={client.availabilityProfile} />
                           {client.latitude && client.longitude ? (
                             <CheckCircle className="w-4 h-4 text-green-500" />
                           ) : (
@@ -310,8 +335,17 @@ function ClientsContent() {
                       )}
                     </div>
 
-                    {/* Status for non-geocoded */}
-                    {(!client.latitude || !client.longitude) && (
+                    {/* Status messages */}
+                    {client.status === 'inactive' && (
+                      <div className="mt-3 pt-3 border-t">
+                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                          <UserX className="w-3 h-3" />
+                          Client inactif
+                          {client.deactivationReason && ` - ${client.deactivationReason}`}
+                        </p>
+                      </div>
+                    )}
+                    {client.status === 'active' && (!client.latitude || !client.longitude) && (
                       <div className="mt-3 pt-3 border-t">
                         <p className="text-xs text-orange-600 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />

@@ -578,15 +578,30 @@ export async function createTourAsync(name: string, date: string, clientIds: str
   return newTour;
 }
 
-export function createTour(name: string, date: string, clientIds: string[]): Tour {
+export function createTour(
+  name: string, 
+  date: string, 
+  clientIds: string[],
+  customStartPoint?: { lat: number; lng: number; address: string }
+): Tour {
   const settings = getSettings();
   const currentUser = getCurrentUser();
+  
+  // Use custom start point if provided, otherwise use settings default (headquarters or startPoint)
+  const startPoint = customStartPoint || 
+    (settings.headquarters?.lat && settings.headquarters?.lng
+      ? { 
+          lat: settings.headquarters.lat, 
+          lng: settings.headquarters.lng, 
+          address: `${settings.headquarters.address}, ${settings.headquarters.postalCode} ${settings.headquarters.city}` 
+        }
+      : settings.startPoint);
   
   const tempTour: Tour = {
     id: generateId(),
     name,
     date,
-    startPoint: settings.startPoint,
+    startPoint,
     status: 'planning',
     totalDistance: null,
     totalDuration: null,

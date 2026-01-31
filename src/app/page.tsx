@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import SmartSuggestions from '@/components/tour/SmartSuggestions';
+import StartPointSelector from '@/components/tour/StartPointSelector';
 import { TourSuggestion } from '@/lib/smart-planner';
 import {
   getClients,
@@ -47,6 +48,9 @@ import {
   UserPlus,
   LogOut,
   BarChart3,
+  Navigation,
+  User,
+  ClipboardList,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AuthGuard } from '@/components/auth/AuthGuard';
@@ -80,6 +84,9 @@ function HomeContent() {
   );
   const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showStartPointSelector, setShowStartPointSelector] = useState(false);
+  const [customStartPoint, setCustomStartPoint] = useState<{ lat: number; lng: number; address: string } | null>(null);
+  const [pendingSuggestion, setPendingSuggestion] = useState<TourSuggestion | null>(null);
 
   // Charger les données au démarrage selon le rôle
   useEffect(() => {
@@ -218,20 +225,32 @@ function HomeContent() {
     alert(message);
   };
 
-  // Créer une nouvelle tournée
-  const handleCreateTour = () => {
+  // Demander le point de départ avant de créer la tournée manuelle
+  const handleRequestCreateTour = () => {
+    if (!newTourName.trim() || selectedClients.size === 0) return;
+    setPendingSuggestion(null); // Clear any pending suggestion
+    setShowStartPointSelector(true);
+  };
+
+  // Créer une nouvelle tournée avec le point de départ sélectionné
+  const handleCreateTour = (startPoint?: { lat: number; lng: number; address: string }) => {
     if (!newTourName.trim() || selectedClients.size === 0) return;
 
     const tour = createTour(
       newTourName,
       newTourDate,
-      Array.from(selectedClients)
+      Array.from(selectedClients),
+      startPoint || customStartPoint || undefined
     );
 
     setTours(getTours());
     setShowNewTourDialog(false);
     setNewTourName('');
     setSelectedClients(new Set());
+    setCustomStartPoint(null);
+    
+    // Go to the tour
+    router.push(`/tour/${tour.id}`);
   };
 
   // Toggle sélection client
@@ -251,20 +270,44 @@ function HomeContent() {
     setSelectedClients(new Set(geocoded.map(c => c.id)));
   };
 
-  // Créer une tournée depuis une suggestion intelligente
-  const handleCreateFromSuggestion = (suggestion: TourSuggestion) => {
-    const clientIds = suggestion.clients.map(c => c.id);
+  // Demander le point de départ avant de créer la tournée depuis une suggestion
+  const handleRequestCreateFromSuggestion = (suggestion: TourSuggestion) => {
+    setPendingSuggestion(suggestion);
+    setShowStartPointSelector(true);
+  };
+
+  // Créer une tournée depuis une suggestion intelligente avec le point de départ sélectionné
+  const handleCreateFromSuggestion = (startPoint?: { lat: number; lng: number; address: string }) => {
+    if (!pendingSuggestion) return;
+    
+    const clientIds = pendingSuggestion.clients.map(c => c.id);
     const tour = createTour(
-      suggestion.name,
-      suggestion.date,
-      clientIds
+      pendingSuggestion.name,
+      pendingSuggestion.date,
+      clientIds,
+      startPoint || undefined
     );
     
     setTours(getTours());
     setRefreshKey(prev => prev + 1);
+    setPendingSuggestion(null);
     
     // Rediriger vers la page de la tournée
     router.push(`/tour/${tour.id}`);
+  };
+
+  // Handler pour le sélecteur de point de départ
+  const handleStartPointSelected = (startPoint: { lat: number; lng: number; address: string }) => {
+    setCustomStartPoint(startPoint);
+    setShowStartPointSelector(false);
+    
+    if (pendingSuggestion) {
+      // Creating from suggestion
+      handleCreateFromSuggestion(startPoint);
+    } else {
+      // Creating manually
+      handleCreateTour(startPoint);
+    }
   };
 
   // Vider la base de données (Admin only)
@@ -456,9 +499,31 @@ function HomeContent() {
                         <span>Assigner les clients</span>
                       </Button>
                     </Link>
+
+                    <Link href="/admin/requests" className="block">
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start gap-3 h-12"
+                      >
+                        <ClipboardList className="w-5 h-5" />
+                        <span>Demandes de réactivation</span>
+                      </Button>
+                    </Link>
                   </>
                 )}
 
+                {/* Mon profil - pour tous les utilisateurs */}
+                <Link href="/profile" className="block">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-3 h-12"
+                  >
+                    <User className="w-5 h-5" />
+                    <span>Mon profil</span>
+                  </Button>
+                </Link>
+
+                {/* Créer tournée - pour tous */}
                 <Button
                   variant="outline"
                   className="w-full justify-start gap-3 h-12"
@@ -592,7 +657,7 @@ function HomeContent() {
             {geocodedCount > 0 ? (
               <SmartSuggestions 
                 key={refreshKey}
-                onCreateTour={handleCreateFromSuggestion}
+                onCreateTour={handleRequestCreateFromSuggestion}
                 userId={isAdmin ? undefined : currentUser?.id}
                 onRefresh={() => {
                   const allClientsData = getClients();
@@ -840,16 +905,30 @@ function HomeContent() {
                 Annuler
               </Button>
               <Button
-                onClick={handleCreateTour}
+                onClick={handleRequestCreateTour}
                 disabled={!newTourName.trim() || selectedClients.size === 0}
                 className="flex-1"
               >
-                Créer ({selectedClients.size} clients)
+                <Navigation className="w-4 h-4 mr-2" />
+                Choisir le départ ({selectedClients.size})
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog Sélection point de départ */}
+      {currentUser && (
+        <StartPointSelector
+          open={showStartPointSelector}
+          onClose={() => {
+            setShowStartPointSelector(false);
+            setPendingSuggestion(null);
+          }}
+          userId={currentUser.id}
+          onSelect={handleStartPointSelected}
+        />
+      )}
     </div>
   );
 }
