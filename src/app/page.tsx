@@ -46,6 +46,7 @@ import {
   Shield,
   UserPlus,
   LogOut,
+  BarChart3,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AuthGuard } from '@/components/auth/AuthGuard';
@@ -394,6 +395,15 @@ function HomeContent() {
                 {/* Actions Admin uniquement */}
                 {isAdmin && (
                   <>
+                    <Link href="/admin/dashboard" className="block">
+                      <Button
+                        className="w-full justify-start gap-3 h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      >
+                        <BarChart3 className="w-5 h-5" />
+                        <span>Dashboard KPIs</span>
+                      </Button>
+                    </Link>
+
                     <Button
                       variant="outline"
                       className="w-full justify-start gap-3 h-12"
