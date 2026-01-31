@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/providers/Providers';
+import MobileNav from '@/components/layout/MobileNav';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -42,9 +43,10 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} antialiased`}>
         <Providers>
-          <div className="min-h-screen bg-gray-50">
+          <div className="min-h-screen bg-gray-50 pb-16 lg:pb-0">
             {children}
           </div>
+          <MobileNav />
         </Providers>
       </body>
     </html>

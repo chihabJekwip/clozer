@@ -110,61 +110,61 @@ export default function VisitCard({
 
         {/* Actions - Affichées seulement pour la visite active */}
         {isActive && visit.status === 'pending' && (
-          <div className="flex flex-col gap-2 mt-3 pt-3 border-t">
-            {/* Ligne de téléphone et navigation */}
+          <div className="flex flex-col gap-3 mt-4 pt-4 border-t">
+            {/* Ligne de téléphone et navigation - Plus grands sur mobile */}
             <div className="flex gap-2">
               {mainPhone && (
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="flex-1"
+                  size="lg"
+                  className="flex-1 h-12 text-base"
                   onClick={(e) => {
                     e.stopPropagation();
                     window.location.href = `tel:${mainPhone}`;
                   }}
                 >
-                  <Phone className="w-4 h-4 mr-1" />
+                  <Phone className="w-5 h-5 mr-2" />
                   Appeler
                 </Button>
               )}
               <Button
                 variant="outline"
-                size="sm"
-                className="flex-1"
+                size="lg"
+                className="flex-1 h-12 text-base border-green-500 text-green-600 hover:bg-green-50"
                 onClick={(e) => {
                   e.stopPropagation();
                   onNavigate();
                 }}
               >
-                <Navigation className="w-4 h-4 mr-1" />
+                <Navigation className="w-5 h-5 mr-2" />
                 Itinéraire
               </Button>
             </div>
 
-            {/* Boutons de statut */}
+            {/* Boutons de statut - Plus grands et plus visibles */}
             <div className="flex gap-2">
               <Button
                 variant="success"
-                size="lg"
-                className="flex-1"
+                size="xl"
+                className="flex-1 h-14"
                 onClick={(e) => {
                   e.stopPropagation();
                   onMarkCompleted();
                 }}
               >
-                <Check className="w-5 h-5 mr-1" />
+                <Check className="w-6 h-6 mr-2" />
                 Visite terminée
               </Button>
               <Button
                 variant="warning"
-                size="lg"
-                className="flex-1"
+                size="xl"
+                className="flex-1 h-14"
                 onClick={(e) => {
                   e.stopPropagation();
                   onMarkAbsent();
                 }}
               >
-                <X className="w-5 h-5 mr-1" />
+                <X className="w-6 h-6 mr-2" />
                 Absent
               </Button>
             </div>

@@ -307,17 +307,32 @@ export default function TourPage() {
     setShowAbsentModal(false);
   };
 
-  // Ouvrir la navigation GPS
+  // Ouvrir la navigation GPS - avec choix de l'app sur mobile
   const handleNavigate = (client: Client) => {
     if (!client.latitude || !client.longitude) return;
 
-    const address = encodeURIComponent(
-      `${client.adresse}, ${client.codePostal} ${client.ville}`
+    const label = encodeURIComponent(
+      `${client.nom} - ${client.adresse}, ${client.codePostal} ${client.ville}`
     );
+    const lat = client.latitude;
+    const lng = client.longitude;
 
-    // Ouvrir Google Maps ou l'app de navigation par défaut
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${client.latitude},${client.longitude}&destination_place_id=${address}`;
-    window.open(url, '_blank');
+    // Détecte le type d'appareil
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    
+    if (isIOS) {
+      // Sur iOS, ouvre Apple Maps (qui propose ensuite d'autres apps)
+      // maps:// ouvre Apple Maps avec option de choisir une autre app
+      window.location.href = `maps://maps.apple.com/?daddr=${lat},${lng}&q=${label}`;
+    } else if (isAndroid) {
+      // Sur Android, utilise geo: qui ouvre le sélecteur d'apps
+      window.location.href = `geo:${lat},${lng}?q=${lat},${lng}(${label})`;
+    } else {
+      // Sur desktop, ouvre Google Maps dans un nouvel onglet
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      window.open(url, '_blank');
+    }
   };
 
   // Ouvrir le formulaire de devis
@@ -494,33 +509,39 @@ export default function TourPage() {
         />
       </div>
 
-      {/* Toggle vue - Mobile uniquement */}
-      <div className="bg-white border-b px-4 py-2 flex-shrink-0 lg:hidden">
-        <div className="flex rounded-lg bg-muted p-1">
+      {/* Toggle vue - Mobile uniquement - Design amélioré */}
+      <div className="bg-white border-b px-4 py-3 flex-shrink-0 lg:hidden">
+        <div className="flex rounded-xl bg-gray-100 p-1 shadow-inner">
           <button
-            className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
-              viewMode === 'map' ? 'bg-white shadow' : ''
+            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+              viewMode === 'map' 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-gray-600 hover:text-gray-900'
             }`}
             onClick={() => setViewMode('map')}
           >
-            <MapIcon className="w-4 h-4 inline mr-1" />
+            <MapIcon className="w-4 h-4" />
             Carte
           </button>
           <button
-            className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
-              viewMode === 'split' ? 'bg-white shadow' : ''
+            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+              viewMode === 'split' 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-gray-600 hover:text-gray-900'
             }`}
             onClick={() => setViewMode('split')}
           >
-            Les deux
+            Mixte
           </button>
           <button
-            className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
-              viewMode === 'list' ? 'bg-white shadow' : ''
+            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+              viewMode === 'list' 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-gray-600 hover:text-gray-900'
             }`}
             onClick={() => setViewMode('list')}
           >
-            <List className="w-4 h-4 inline mr-1" />
+            <List className="w-4 h-4" />
             Liste
           </button>
         </div>
@@ -573,25 +594,24 @@ export default function TourPage() {
       </div>
 
       {/* Boutons flottants - Mobile */}
-      <div className="fixed bottom-4 right-4 z-10 flex flex-col gap-3 lg:hidden">
-        {/* Bouton Notes */}
+      <div className="fixed bottom-20 right-4 z-20 flex flex-col gap-3 lg:hidden">
+        {/* Bouton Notes - Style visible */}
         <Button
           size="lg"
-          variant="outline"
-          className="rounded-full shadow-lg h-14 w-14 bg-white"
+          className="rounded-full shadow-xl h-14 w-14 bg-blue-600 hover:bg-blue-700 border-2 border-blue-400"
           onClick={() => setShowNotesPanel(true)}
         >
-          <StickyNote className="w-6 h-6 text-blue-600" />
+          <StickyNote className="w-6 h-6 text-white" />
         </Button>
         
-        {/* Bouton Navigation */}
+        {/* Bouton Navigation - Style visible */}
         {currentClient && currentClient.latitude && currentClient.longitude && viewMode !== 'list' && (
           <Button
             size="lg"
-            className="rounded-full shadow-lg h-14 w-14"
+            className="rounded-full shadow-xl h-14 w-14 bg-green-600 hover:bg-green-700 border-2 border-green-400"
             onClick={() => handleNavigate(currentClient)}
           >
-            <Navigation className="w-6 h-6" />
+            <Navigation className="w-6 h-6 text-white" />
           </Button>
         )}
       </div>
@@ -599,11 +619,10 @@ export default function TourPage() {
       {/* Bouton Notes - Desktop */}
       <div className="hidden lg:flex fixed bottom-4 left-4 z-10">
         <Button
-          variant="outline"
-          className="shadow-lg gap-2 bg-white"
+          className="shadow-lg gap-2 bg-blue-600 hover:bg-blue-700 text-white"
           onClick={() => setShowNotesPanel(true)}
         >
-          <StickyNote className="w-5 h-5 text-blue-600" />
+          <StickyNote className="w-5 h-5" />
           Notes de tournée
         </Button>
       </div>

@@ -353,7 +353,7 @@ function HomeContent() {
   };
 
   return (
-    <div className="min-h-screen pb-20 lg:pb-0">
+    <div className="min-h-screen">
       {/* Header */}
       <header className="bg-primary text-white p-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
