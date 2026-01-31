@@ -261,7 +261,7 @@ function DashboardContent() {
 
             {/* Date Filter */}
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={dateFilter} onValueChange={(v: DateFilter) => setDateFilter(v)}>
+              <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
                 <SelectTrigger className="w-[140px]">
                   <Calendar className="w-4 h-4 mr-2" />
                   <SelectValue />

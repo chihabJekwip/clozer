@@ -140,7 +140,7 @@ function AssignmentsContent() {
               </div>
 
               {/* Filtre */}
-              <Select value={filter} onValueChange={(v: 'all' | 'unassigned' | 'assigned') => setFilter(v)}>
+              <Select value={filter} onValueChange={(v) => setFilter(v as 'all' | 'unassigned' | 'assigned')}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />
                 </SelectTrigger>

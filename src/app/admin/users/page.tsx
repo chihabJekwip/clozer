@@ -160,7 +160,7 @@ function AdminUsersContent() {
                 <Label htmlFor="role">Rôle</Label>
                 <Select 
                   value={formData.role} 
-                  onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}
+                  onValueChange={(value) => setFormData({ ...formData, role: value as UserRole })}
                 >
                   <SelectTrigger>
                     <SelectValue />
