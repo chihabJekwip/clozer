@@ -240,7 +240,7 @@ function AssignmentsContent() {
                   >
                     <Checkbox
                       checked={selectedClients.has(client.id)}
-                      onCheckedChange={() => handleSelectClient(client.id)}
+                      onChange={() => handleSelectClient(client.id)}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">
