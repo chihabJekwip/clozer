@@ -586,6 +586,8 @@ export function createTour(
 ): Tour {
   const settings = getSettings();
   const currentUser = getCurrentUser();
+  const tourId = generateId();
+  const now = new Date().toISOString();
   
   // Use custom start point if provided, otherwise use settings default (headquarters or startPoint)
   const startPoint = customStartPoint || 
@@ -598,7 +600,7 @@ export function createTour(
       : settings.startPoint);
   
   const tempTour: Tour = {
-    id: generateId(),
+    id: tourId,
     name,
     date,
     startPoint,
@@ -611,17 +613,21 @@ export function createTour(
     finalReport: null,
     reportValidatedAt: null,
     reportSentAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
   
   toursCache.push(tempTour);
   
-  // Create temp visits
+  // Create visits with matching IDs
+  const visitIds: string[] = [];
   clientIds.forEach((clientId, index) => {
+    const visitId = generateId();
+    visitIds.push(visitId);
+    
     const tempVisit: Visit = {
-      id: generateId(),
-      tourId: tempTour.id,
+      id: visitId,
+      tourId: tourId,
       clientId,
       order: index,
       status: 'pending',
@@ -632,14 +638,46 @@ export function createTour(
       estimatedDuration: settings.defaultVisitDuration,
       distanceFromPrevious: null,
       durationFromPrevious: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
     visitsCache.push(tempVisit);
   });
   
-  // Sync to Supabase in background
-  createTourAsync(name, date, clientIds);
+  // Sync to Supabase in background with SAME IDs
+  supabase.from('clozer_tours').insert({
+    id: tourId,
+    name,
+    date,
+    start_lat: startPoint.lat,
+    start_lng: startPoint.lng,
+    start_address: startPoint.address,
+    status: 'planning',
+    user_id: currentUser?.id || null,
+    created_at: now,
+    updated_at: now,
+  }).then(({ error: tourError }) => {
+    if (tourError) {
+      console.error('Error creating tour:', tourError);
+      return;
+    }
+    
+    // Insert visits with matching IDs
+    const visitsToInsert = clientIds.map((clientId, index) => ({
+      id: visitIds[index],
+      tour_id: tourId,
+      client_id: clientId,
+      order_index: index,
+      status: 'pending',
+      estimated_duration: settings.defaultVisitDuration,
+      created_at: now,
+      updated_at: now,
+    }));
+    
+    supabase.from('clozer_visits').insert(visitsToInsert).then(({ error: visitsError }) => {
+      if (visitsError) console.error('Error creating visits:', visitsError);
+    });
+  });
   
   return tempTour;
 }
@@ -775,17 +813,21 @@ export function getVisit(id: string): Visit | undefined {
 }
 
 export function addVisit(visit: Omit<Visit, 'id' | 'createdAt' | 'updatedAt'>): Visit {
+  const newId = generateId();
+  const now = new Date().toISOString();
+  
   const tempVisit: Visit = {
     ...visit,
-    id: generateId(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    id: newId,
+    createdAt: now,
+    updatedAt: now,
   };
   
   visitsCache.push(tempVisit);
   
-  // Sync to Supabase in background
+  // Sync to Supabase in background - include ID!
   supabase.from('clozer_visits').insert({
+    id: newId,
     tour_id: visit.tourId,
     client_id: visit.clientId,
     order_index: visit.order,
@@ -797,6 +839,10 @@ export function addVisit(visit: Omit<Visit, 'id' | 'createdAt' | 'updatedAt'>): 
     estimated_duration: visit.estimatedDuration,
     distance_from_previous: visit.distanceFromPrevious,
     duration_from_previous: visit.durationFromPrevious,
+    created_at: now,
+    updated_at: now,
+  }).then(({ error }) => {
+    if (error) console.error('Error adding visit:', error);
   });
   
   return tempVisit;
@@ -905,17 +951,21 @@ export function getQuotesByClient(clientId: string): Quote[] {
 }
 
 export function addQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Quote {
+  const newId = generateId();
+  const now = new Date().toISOString();
+  
   const tempQuote: Quote = {
     ...quote,
-    id: generateId(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    id: newId,
+    createdAt: now,
+    updatedAt: now,
   };
   
   quotesCache.push(tempQuote);
   
-  // Sync to Supabase in background
+  // Sync to Supabase in background - include ID!
   supabase.from('clozer_quotes').insert({
+    id: newId,
     visit_id: quote.visitId,
     client_id: quote.clientId,
     date: quote.date,
@@ -929,6 +979,10 @@ export function addQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): 
     tva: quote.tva,
     total_ttc: quote.totalTTC,
     signature_data: quote.signatureData,
+    created_at: now,
+    updated_at: now,
+  }).then(({ error }) => {
+    if (error) console.error('Error adding quote:', error);
   });
   
   return tempQuote;
@@ -1095,20 +1149,30 @@ export function getUser(id: string): User | undefined {
 }
 
 export function addUser(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): User {
+  const newId = generateId();
+  const now = new Date().toISOString();
+  
   const tempUser: User = {
     ...user,
-    id: generateId(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    id: newId,
+    createdAt: now,
+    updatedAt: now,
   };
   
   usersCache.push(tempUser);
   
-  // Sync to Supabase in background
+  // Sync to Supabase in background - IMPORTANT: include the ID!
   supabase.from('clozer_users').insert({
+    id: newId,
     name: user.name,
     email: user.email,
     role: user.role,
+    created_at: now,
+    updated_at: now,
+  }).then(({ error }) => {
+    if (error) {
+      console.error('Error adding user to Supabase:', error);
+    }
   });
   
   return tempUser;
@@ -1243,21 +1307,29 @@ export function getReportsByClient(clientId: string): VisitReport[] {
 }
 
 export function addVisitReport(report: Omit<VisitReport, 'id' | 'createdAt' | 'updatedAt'>): VisitReport {
+  const newId = generateId();
+  const now = new Date().toISOString();
+  
   const tempReport: VisitReport = {
     ...report,
-    id: generateId(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    id: newId,
+    createdAt: now,
+    updatedAt: now,
   };
   
   reportsCache.push(tempReport);
   
-  // Sync to Supabase in background
+  // Sync to Supabase in background - include ID!
   supabase.from('clozer_visit_reports').insert({
+    id: newId,
     visit_id: report.visitId,
     client_id: report.clientId,
     content: report.content,
     created_by: report.createdBy,
+    created_at: now,
+    updated_at: now,
+  }).then(({ error }) => {
+    if (error) console.error('Error adding visit report:', error);
   });
   
   return tempReport;
