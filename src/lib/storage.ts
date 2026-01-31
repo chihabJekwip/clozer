@@ -1,122 +1,489 @@
-// Stockage local des données avec localStorage et fichiers JSON
-// Alternative simple à SQLite pour éviter les problèmes de compilation native
+// Stockage des données avec Supabase
+// Synchronisation entre tous les appareils
 
 import { Client, Tour, Visit, Quote, AppSettings, User, VisitReport } from '@/types';
+import { supabase } from './supabase';
 import { generateId } from './utils';
 import { ANGOULEME_COORDINATES } from './geocoding';
 
-const STORAGE_KEYS = {
-  CLIENTS: 'clozer_clients',
-  TOURS: 'clozer_tours',
-  VISITS: 'clozer_visits',
-  QUOTES: 'clozer_quotes',
-  SETTINGS: 'clozer_settings',
-  USERS: 'clozer_users',
-  CURRENT_USER: 'clozer_current_user',
-  VISIT_REPORTS: 'clozer_visit_reports',
-};
+// ==================== HELPER FUNCTIONS ====================
 
-// Utilitaires de stockage
-function getFromStorage<T>(key: string, defaultValue: T): T {
-  if (typeof window === 'undefined') return defaultValue;
+function toDbClient(client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): any {
+  return {
+    civilite: client.civilite,
+    nom: client.nom,
+    prenom: client.prenom,
+    tel_domicile: client.telDomicile,
+    portable_m: client.portableM,
+    portable_mme: client.portableMme,
+    adresse: client.adresse,
+    code_postal: client.codePostal,
+    ville: client.ville,
+    latitude: client.latitude,
+    longitude: client.longitude,
+    assigned_to: client.assignedTo,
+  };
+}
+
+function fromDbClient(db: any): Client {
+  return {
+    id: db.id,
+    civilite: db.civilite || '',
+    nom: db.nom,
+    prenom: db.prenom || '',
+    telDomicile: db.tel_domicile,
+    portableM: db.portable_m,
+    portableMme: db.portable_mme,
+    adresse: db.adresse,
+    codePostal: db.code_postal,
+    ville: db.ville,
+    latitude: db.latitude,
+    longitude: db.longitude,
+    assignedTo: db.assigned_to,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbUser(db: any): User {
+  return {
+    id: db.id,
+    name: db.name,
+    email: db.email,
+    role: db.role,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbTour(db: any): Tour {
+  return {
+    id: db.id,
+    name: db.name,
+    date: db.date,
+    startPoint: {
+      lat: db.start_lat,
+      lng: db.start_lng,
+      address: db.start_address,
+    },
+    status: db.status,
+    totalDistance: db.total_distance,
+    totalDuration: db.total_duration,
+    userId: db.user_id,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbVisit(db: any): Visit {
+  return {
+    id: db.id,
+    tourId: db.tour_id,
+    clientId: db.client_id,
+    order: db.order_index,
+    status: db.status,
+    visitedAt: db.visited_at,
+    notes: db.notes,
+    absentStrategy: db.absent_strategy,
+    estimatedArrival: db.estimated_arrival,
+    estimatedDuration: db.estimated_duration,
+    distanceFromPrevious: db.distance_from_previous,
+    durationFromPrevious: db.duration_from_previous,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbQuote(db: any): Quote {
+  return {
+    id: db.id,
+    visitId: db.visit_id,
+    clientId: db.client_id,
+    date: db.date,
+    status: db.status,
+    clientName: db.client_name,
+    clientAddress: db.client_address,
+    clientPhone: db.client_phone,
+    items: db.items || [],
+    notes: db.notes,
+    totalHT: db.total_ht,
+    tva: db.tva,
+    totalTTC: db.total_ttc,
+    signatureData: db.signature_data,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbVisitReport(db: any): VisitReport {
+  return {
+    id: db.id,
+    visitId: db.visit_id,
+    clientId: db.client_id,
+    content: db.content,
+    createdBy: db.created_by,
+    createdAt: db.created_at,
+    updatedAt: db.updated_at,
+  };
+}
+
+function fromDbSettings(db: any): AppSettings {
+  return {
+    startPoint: {
+      lat: db.start_lat,
+      lng: db.start_lng,
+      address: db.start_address,
+    },
+    workStartTime: db.work_start_time,
+    workEndTime: db.work_end_time,
+    lunchBreakStart: db.lunch_break_start,
+    lunchBreakEnd: db.lunch_break_end,
+    defaultVisitDuration: db.default_visit_duration,
+    companyName: db.company_name,
+    companyAddress: db.company_address,
+    companyPhone: db.company_phone,
+    companySiret: db.company_siret,
+    currentUserId: null,
+  };
+}
+
+// ==================== LOCAL STORAGE FOR CURRENT USER ====================
+// Current user is stored locally for session persistence
+
+const CURRENT_USER_KEY = 'clozer_current_user';
+
+function getLocalCurrentUserId(): string | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : defaultValue;
+    return localStorage.getItem(CURRENT_USER_KEY);
   } catch {
-    return defaultValue;
+    return null;
   }
 }
 
-function saveToStorage<T>(key: string, value: T): void {
+function setLocalCurrentUserId(userId: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.error('Erreur de sauvegarde:', error);
+    if (userId) {
+      localStorage.setItem(CURRENT_USER_KEY, userId);
+    } else {
+      localStorage.removeItem(CURRENT_USER_KEY);
+    }
+  } catch {
+    // Ignore
   }
 }
 
 // ==================== CLIENTS ====================
 
-export function getClients(): Client[] {
-  return getFromStorage<Client[]>(STORAGE_KEYS.CLIENTS, []);
+export async function getClientsAsync(): Promise<Client[]> {
+  const { data, error } = await supabase
+    .from('clozer_clients')
+    .select('*')
+    .order('nom');
+  
+  if (error) {
+    console.error('Error fetching clients:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbClient);
 }
 
-export function saveClients(clients: Client[]): void {
-  saveToStorage(STORAGE_KEYS.CLIENTS, clients);
+// Synchronous version using cached data
+let clientsCache: Client[] = [];
+let clientsCacheLoaded = false;
+
+export function getClients(): Client[] {
+  if (!clientsCacheLoaded) {
+    // Trigger async load
+    getClientsAsync().then(clients => {
+      clientsCache = clients;
+      clientsCacheLoaded = true;
+    });
+  }
+  return clientsCache;
+}
+
+export async function refreshClients(): Promise<Client[]> {
+  clientsCache = await getClientsAsync();
+  clientsCacheLoaded = true;
+  return clientsCache;
 }
 
 export function getClient(id: string): Client | undefined {
-  return getClients().find(c => c.id === id);
+  return clientsCache.find(c => c.id === id);
+}
+
+export async function getClientAsync(id: string): Promise<Client | null> {
+  const { data, error } = await supabase
+    .from('clozer_clients')
+    .select('*')
+    .eq('id', id)
+    .single();
+  
+  if (error || !data) return null;
+  return fromDbClient(data);
+}
+
+export async function addClientAsync(client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): Promise<Client | null> {
+  const { data, error } = await supabase
+    .from('clozer_clients')
+    .insert(toDbClient(client))
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error adding client:', error);
+    return null;
+  }
+  
+  const newClient = fromDbClient(data);
+  clientsCache.push(newClient);
+  return newClient;
 }
 
 export function addClient(client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): Client {
-  const newClient: Client = {
+  const tempClient: Client = {
     ...client,
     id: generateId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const clients = getClients();
-  clients.push(newClient);
-  saveClients(clients);
-  return newClient;
+  
+  // Add to cache immediately
+  clientsCache.push(tempClient);
+  
+  // Sync to Supabase in background
+  addClientAsync(client).then(newClient => {
+    if (newClient) {
+      const index = clientsCache.findIndex(c => c.id === tempClient.id);
+      if (index !== -1) {
+        clientsCache[index] = newClient;
+      }
+    }
+  });
+  
+  return tempClient;
+}
+
+export async function updateClientAsync(id: string, updates: Partial<Client>): Promise<Client | null> {
+  const dbUpdates: any = {};
+  if (updates.civilite !== undefined) dbUpdates.civilite = updates.civilite;
+  if (updates.nom !== undefined) dbUpdates.nom = updates.nom;
+  if (updates.prenom !== undefined) dbUpdates.prenom = updates.prenom;
+  if (updates.telDomicile !== undefined) dbUpdates.tel_domicile = updates.telDomicile;
+  if (updates.portableM !== undefined) dbUpdates.portable_m = updates.portableM;
+  if (updates.portableMme !== undefined) dbUpdates.portable_mme = updates.portableMme;
+  if (updates.adresse !== undefined) dbUpdates.adresse = updates.adresse;
+  if (updates.codePostal !== undefined) dbUpdates.code_postal = updates.codePostal;
+  if (updates.ville !== undefined) dbUpdates.ville = updates.ville;
+  if (updates.latitude !== undefined) dbUpdates.latitude = updates.latitude;
+  if (updates.longitude !== undefined) dbUpdates.longitude = updates.longitude;
+  if (updates.assignedTo !== undefined) dbUpdates.assigned_to = updates.assignedTo;
+  
+  const { data, error } = await supabase
+    .from('clozer_clients')
+    .update(dbUpdates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating client:', error);
+    return null;
+  }
+  
+  const updatedClient = fromDbClient(data);
+  const index = clientsCache.findIndex(c => c.id === id);
+  if (index !== -1) {
+    clientsCache[index] = updatedClient;
+  }
+  
+  return updatedClient;
 }
 
 export function updateClient(id: string, updates: Partial<Client>): Client | null {
-  const clients = getClients();
-  const index = clients.findIndex(c => c.id === id);
+  const index = clientsCache.findIndex(c => c.id === id);
   if (index === -1) return null;
   
-  clients[index] = {
-    ...clients[index],
+  // Update cache immediately
+  clientsCache[index] = {
+    ...clientsCache[index],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  saveClients(clients);
-  return clients[index];
+  
+  // Sync to Supabase in background
+  updateClientAsync(id, updates);
+  
+  return clientsCache[index];
 }
 
-export function deleteClient(id: string): boolean {
-  const clients = getClients();
-  const filtered = clients.filter(c => c.id !== id);
-  if (filtered.length === clients.length) return false;
-  saveClients(filtered);
+export async function deleteClientAsync(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('clozer_clients')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting client:', error);
+    return false;
+  }
+  
+  clientsCache = clientsCache.filter(c => c.id !== id);
   return true;
 }
 
+export function deleteClient(id: string): boolean {
+  clientsCache = clientsCache.filter(c => c.id !== id);
+  deleteClientAsync(id);
+  return true;
+}
+
+export async function importClientsAsync(newClients: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<Client[]> {
+  // Delete all existing clients first
+  await supabase.from('clozer_clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  
+  // Insert new clients
+  const dbClients = newClients.map(toDbClient);
+  const { data, error } = await supabase
+    .from('clozer_clients')
+    .insert(dbClients)
+    .select();
+  
+  if (error) {
+    console.error('Error importing clients:', error);
+    return [];
+  }
+  
+  clientsCache = (data || []).map(fromDbClient);
+  return clientsCache;
+}
+
 export function importClients(newClients: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[]): Client[] {
-  const now = new Date().toISOString();
-  const clientsWithIds: Client[] = newClients.map(c => ({
+  // Create temp clients with IDs
+  const tempClients: Client[] = newClients.map(c => ({
     ...c,
     id: generateId(),
-    createdAt: now,
-    updatedAt: now,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   }));
   
-  // Remplacer tous les clients existants
-  saveClients(clientsWithIds);
-  return clientsWithIds;
+  clientsCache = tempClients;
+  
+  // Sync to Supabase in background
+  importClientsAsync(newClients).then(imported => {
+    if (imported.length > 0) {
+      clientsCache = imported;
+    }
+  });
+  
+  return tempClients;
+}
+
+export function saveClients(clients: Client[]): void {
+  clientsCache = clients;
+  // Sync would need batch update - for now, use import
 }
 
 // ==================== TOURS ====================
 
+let toursCache: Tour[] = [];
+let toursCacheLoaded = false;
+
+export async function getToursAsync(): Promise<Tour[]> {
+  const { data, error } = await supabase
+    .from('clozer_tours')
+    .select('*')
+    .order('date', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching tours:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbTour);
+}
+
 export function getTours(): Tour[] {
-  return getFromStorage<Tour[]>(STORAGE_KEYS.TOURS, []);
+  if (!toursCacheLoaded) {
+    getToursAsync().then(tours => {
+      toursCache = tours;
+      toursCacheLoaded = true;
+    });
+  }
+  return toursCache;
+}
+
+export async function refreshTours(): Promise<Tour[]> {
+  toursCache = await getToursAsync();
+  toursCacheLoaded = true;
+  return toursCache;
 }
 
 export function saveTours(tours: Tour[]): void {
-  saveToStorage(STORAGE_KEYS.TOURS, tours);
+  toursCache = tours;
 }
 
 export function getTour(id: string): Tour | undefined {
-  return getTours().find(t => t.id === id);
+  return toursCache.find(t => t.id === id);
+}
+
+export async function createTourAsync(name: string, date: string, clientIds: string[]): Promise<Tour | null> {
+  const settings = getSettings();
+  const currentUser = getCurrentUser();
+  
+  const { data: tourData, error: tourError } = await supabase
+    .from('clozer_tours')
+    .insert({
+      name,
+      date,
+      start_lat: settings.startPoint.lat,
+      start_lng: settings.startPoint.lng,
+      start_address: settings.startPoint.address,
+      status: 'planning',
+      user_id: currentUser?.id || null,
+    })
+    .select()
+    .single();
+  
+  if (tourError) {
+    console.error('Error creating tour:', tourError);
+    return null;
+  }
+  
+  const newTour = fromDbTour(tourData);
+  toursCache.push(newTour);
+  
+  // Create visits for this tour
+  const visitsToInsert = clientIds.map((clientId, index) => ({
+    tour_id: newTour.id,
+    client_id: clientId,
+    order_index: index,
+    status: 'pending',
+    estimated_duration: settings.defaultVisitDuration,
+  }));
+  
+  const { data: visitsData, error: visitsError } = await supabase
+    .from('clozer_visits')
+    .insert(visitsToInsert)
+    .select();
+  
+  if (visitsError) {
+    console.error('Error creating visits:', visitsError);
+  } else if (visitsData) {
+    visitsCache.push(...visitsData.map(fromDbVisit));
+  }
+  
+  return newTour;
 }
 
 export function createTour(name: string, date: string, clientIds: string[]): Tour {
   const settings = getSettings();
   const currentUser = getCurrentUser();
-  const newTour: Tour = {
+  
+  const tempTour: Tour = {
     id: generateId(),
     name,
     date,
@@ -129,167 +496,343 @@ export function createTour(name: string, date: string, clientIds: string[]): Tou
     updatedAt: new Date().toISOString(),
   };
   
-  const tours = getTours();
-  tours.push(newTour);
-  saveTours(tours);
+  toursCache.push(tempTour);
   
-  // Créer les visites pour cette tournée
-  const clients = getClients();
+  // Create temp visits
   clientIds.forEach((clientId, index) => {
-    const client = clients.find(c => c.id === clientId);
-    if (client) {
-      addVisit({
-        tourId: newTour.id,
-        clientId,
-        order: index,
-        status: 'pending',
-        visitedAt: null,
-        notes: null,
-        absentStrategy: null,
-        estimatedArrival: null,
-        estimatedDuration: settings.defaultVisitDuration,
-        distanceFromPrevious: null,
-        durationFromPrevious: null,
-      });
-    }
+    const tempVisit: Visit = {
+      id: generateId(),
+      tourId: tempTour.id,
+      clientId,
+      order: index,
+      status: 'pending',
+      visitedAt: null,
+      notes: null,
+      absentStrategy: null,
+      estimatedArrival: null,
+      estimatedDuration: settings.defaultVisitDuration,
+      distanceFromPrevious: null,
+      durationFromPrevious: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    visitsCache.push(tempVisit);
   });
   
-  return newTour;
+  // Sync to Supabase in background
+  createTourAsync(name, date, clientIds);
+  
+  return tempTour;
+}
+
+export async function updateTourAsync(id: string, updates: Partial<Tour>): Promise<Tour | null> {
+  const dbUpdates: any = {};
+  if (updates.name !== undefined) dbUpdates.name = updates.name;
+  if (updates.date !== undefined) dbUpdates.date = updates.date;
+  if (updates.status !== undefined) dbUpdates.status = updates.status;
+  if (updates.totalDistance !== undefined) dbUpdates.total_distance = updates.totalDistance;
+  if (updates.totalDuration !== undefined) dbUpdates.total_duration = updates.totalDuration;
+  if (updates.startPoint) {
+    dbUpdates.start_lat = updates.startPoint.lat;
+    dbUpdates.start_lng = updates.startPoint.lng;
+    dbUpdates.start_address = updates.startPoint.address;
+  }
+  
+  const { data, error } = await supabase
+    .from('clozer_tours')
+    .update(dbUpdates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating tour:', error);
+    return null;
+  }
+  
+  const updatedTour = fromDbTour(data);
+  const index = toursCache.findIndex(t => t.id === id);
+  if (index !== -1) {
+    toursCache[index] = updatedTour;
+  }
+  
+  return updatedTour;
 }
 
 export function updateTour(id: string, updates: Partial<Tour>): Tour | null {
-  const tours = getTours();
-  const index = tours.findIndex(t => t.id === id);
+  const index = toursCache.findIndex(t => t.id === id);
   if (index === -1) return null;
   
-  tours[index] = {
-    ...tours[index],
+  toursCache[index] = {
+    ...toursCache[index],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  saveTours(tours);
-  return tours[index];
+  
+  updateTourAsync(id, updates);
+  
+  return toursCache[index];
+}
+
+export async function deleteTourAsync(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('clozer_tours')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting tour:', error);
+    return false;
+  }
+  
+  toursCache = toursCache.filter(t => t.id !== id);
+  visitsCache = visitsCache.filter(v => v.tourId !== id);
+  return true;
 }
 
 export function deleteTour(id: string): boolean {
-  const tours = getTours();
-  const filtered = tours.filter(t => t.id !== id);
-  if (filtered.length === tours.length) return false;
-  saveTours(filtered);
-  
-  // Supprimer les visites associées
-  const visits = getVisits();
-  saveVisits(visits.filter(v => v.tourId !== id));
-  
+  toursCache = toursCache.filter(t => t.id !== id);
+  visitsCache = visitsCache.filter(v => v.tourId !== id);
+  deleteTourAsync(id);
   return true;
 }
 
 export function getToursByUser(userId: string): Tour[] {
-  return getTours().filter(t => t.userId === userId);
+  return toursCache.filter(t => t.userId === userId);
 }
 
 // ==================== VISITS ====================
 
+let visitsCache: Visit[] = [];
+let visitsCacheLoaded = false;
+
+export async function getVisitsAsync(): Promise<Visit[]> {
+  const { data, error } = await supabase
+    .from('clozer_visits')
+    .select('*')
+    .order('order_index');
+  
+  if (error) {
+    console.error('Error fetching visits:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbVisit);
+}
+
 export function getVisits(): Visit[] {
-  return getFromStorage<Visit[]>(STORAGE_KEYS.VISITS, []);
+  if (!visitsCacheLoaded) {
+    getVisitsAsync().then(visits => {
+      visitsCache = visits;
+      visitsCacheLoaded = true;
+    });
+  }
+  return visitsCache;
+}
+
+export async function refreshVisits(): Promise<Visit[]> {
+  visitsCache = await getVisitsAsync();
+  visitsCacheLoaded = true;
+  return visitsCache;
 }
 
 export function saveVisits(visits: Visit[]): void {
-  saveToStorage(STORAGE_KEYS.VISITS, visits);
+  visitsCache = visits;
 }
 
 export function getVisitsByTour(tourId: string): Visit[] {
-  return getVisits()
+  return visitsCache
     .filter(v => v.tourId === tourId)
     .sort((a, b) => a.order - b.order);
 }
 
 export function getVisit(id: string): Visit | undefined {
-  return getVisits().find(v => v.id === id);
+  return visitsCache.find(v => v.id === id);
 }
 
 export function addVisit(visit: Omit<Visit, 'id' | 'createdAt' | 'updatedAt'>): Visit {
-  const newVisit: Visit = {
+  const tempVisit: Visit = {
     ...visit,
     id: generateId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const visits = getVisits();
-  visits.push(newVisit);
-  saveVisits(visits);
-  return newVisit;
+  
+  visitsCache.push(tempVisit);
+  
+  // Sync to Supabase in background
+  supabase.from('clozer_visits').insert({
+    tour_id: visit.tourId,
+    client_id: visit.clientId,
+    order_index: visit.order,
+    status: visit.status,
+    visited_at: visit.visitedAt,
+    notes: visit.notes,
+    absent_strategy: visit.absentStrategy,
+    estimated_arrival: visit.estimatedArrival,
+    estimated_duration: visit.estimatedDuration,
+    distance_from_previous: visit.distanceFromPrevious,
+    duration_from_previous: visit.durationFromPrevious,
+  });
+  
+  return tempVisit;
+}
+
+export async function updateVisitAsync(id: string, updates: Partial<Visit>): Promise<Visit | null> {
+  const dbUpdates: any = {};
+  if (updates.order !== undefined) dbUpdates.order_index = updates.order;
+  if (updates.status !== undefined) dbUpdates.status = updates.status;
+  if (updates.visitedAt !== undefined) dbUpdates.visited_at = updates.visitedAt;
+  if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+  if (updates.absentStrategy !== undefined) dbUpdates.absent_strategy = updates.absentStrategy;
+  if (updates.estimatedArrival !== undefined) dbUpdates.estimated_arrival = updates.estimatedArrival;
+  if (updates.estimatedDuration !== undefined) dbUpdates.estimated_duration = updates.estimatedDuration;
+  if (updates.distanceFromPrevious !== undefined) dbUpdates.distance_from_previous = updates.distanceFromPrevious;
+  if (updates.durationFromPrevious !== undefined) dbUpdates.duration_from_previous = updates.durationFromPrevious;
+  
+  const { data, error } = await supabase
+    .from('clozer_visits')
+    .update(dbUpdates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating visit:', error);
+    return null;
+  }
+  
+  const updatedVisit = fromDbVisit(data);
+  const index = visitsCache.findIndex(v => v.id === id);
+  if (index !== -1) {
+    visitsCache[index] = updatedVisit;
+  }
+  
+  return updatedVisit;
 }
 
 export function updateVisit(id: string, updates: Partial<Visit>): Visit | null {
-  const visits = getVisits();
-  const index = visits.findIndex(v => v.id === id);
+  const index = visitsCache.findIndex(v => v.id === id);
   if (index === -1) return null;
   
-  visits[index] = {
-    ...visits[index],
+  visitsCache[index] = {
+    ...visitsCache[index],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  saveVisits(visits);
-  return visits[index];
+  
+  updateVisitAsync(id, updates);
+  
+  return visitsCache[index];
 }
 
 export function updateVisitsOrder(tourId: string, orderedVisitIds: string[]): void {
-  const visits = getVisits();
   orderedVisitIds.forEach((visitId, index) => {
-    const visitIndex = visits.findIndex(v => v.id === visitId);
+    const visitIndex = visitsCache.findIndex(v => v.id === visitId);
     if (visitIndex !== -1) {
-      visits[visitIndex].order = index;
-      visits[visitIndex].updatedAt = new Date().toISOString();
+      visitsCache[visitIndex].order = index;
+      visitsCache[visitIndex].updatedAt = new Date().toISOString();
+      
+      // Sync to Supabase
+      supabase.from('clozer_visits').update({ order_index: index }).eq('id', visitId);
     }
   });
-  saveVisits(visits);
 }
 
 // ==================== QUOTES ====================
 
+let quotesCache: Quote[] = [];
+let quotesCacheLoaded = false;
+
+export async function getQuotesAsync(): Promise<Quote[]> {
+  const { data, error } = await supabase
+    .from('clozer_quotes')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching quotes:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbQuote);
+}
+
 export function getQuotes(): Quote[] {
-  return getFromStorage<Quote[]>(STORAGE_KEYS.QUOTES, []);
+  if (!quotesCacheLoaded) {
+    getQuotesAsync().then(quotes => {
+      quotesCache = quotes;
+      quotesCacheLoaded = true;
+    });
+  }
+  return quotesCache;
 }
 
 export function saveQuotes(quotes: Quote[]): void {
-  saveToStorage(STORAGE_KEYS.QUOTES, quotes);
+  quotesCache = quotes;
 }
 
 export function getQuote(id: string): Quote | undefined {
-  return getQuotes().find(q => q.id === id);
+  return quotesCache.find(q => q.id === id);
 }
 
 export function getQuotesByClient(clientId: string): Quote[] {
-  return getQuotes().filter(q => q.clientId === clientId);
+  return quotesCache.filter(q => q.clientId === clientId);
 }
 
 export function addQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Quote {
-  const newQuote: Quote = {
+  const tempQuote: Quote = {
     ...quote,
     id: generateId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const quotes = getQuotes();
-  quotes.push(newQuote);
-  saveQuotes(quotes);
-  return newQuote;
+  
+  quotesCache.push(tempQuote);
+  
+  // Sync to Supabase in background
+  supabase.from('clozer_quotes').insert({
+    visit_id: quote.visitId,
+    client_id: quote.clientId,
+    date: quote.date,
+    status: quote.status,
+    client_name: quote.clientName,
+    client_address: quote.clientAddress,
+    client_phone: quote.clientPhone,
+    items: quote.items,
+    notes: quote.notes,
+    total_ht: quote.totalHT,
+    tva: quote.tva,
+    total_ttc: quote.totalTTC,
+    signature_data: quote.signatureData,
+  });
+  
+  return tempQuote;
 }
 
 export function updateQuote(id: string, updates: Partial<Quote>): Quote | null {
-  const quotes = getQuotes();
-  const index = quotes.findIndex(q => q.id === id);
+  const index = quotesCache.findIndex(q => q.id === id);
   if (index === -1) return null;
   
-  quotes[index] = {
-    ...quotes[index],
+  quotesCache[index] = {
+    ...quotesCache[index],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  saveQuotes(quotes);
-  return quotes[index];
+  
+  // Sync to Supabase in background
+  const dbUpdates: any = {};
+  if (updates.status !== undefined) dbUpdates.status = updates.status;
+  if (updates.items !== undefined) dbUpdates.items = updates.items;
+  if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+  if (updates.totalHT !== undefined) dbUpdates.total_ht = updates.totalHT;
+  if (updates.tva !== undefined) dbUpdates.tva = updates.tva;
+  if (updates.totalTTC !== undefined) dbUpdates.total_ttc = updates.totalTTC;
+  if (updates.signatureData !== undefined) dbUpdates.signature_data = updates.signatureData;
+  
+  supabase.from('clozer_quotes').update(dbUpdates).eq('id', id);
+  
+  return quotesCache[index];
 }
 
 // ==================== SETTINGS ====================
@@ -308,22 +851,65 @@ const DEFAULT_SETTINGS: AppSettings = {
   currentUserId: null,
 };
 
+let settingsCache: AppSettings = DEFAULT_SETTINGS;
+let settingsCacheLoaded = false;
+
+export async function getSettingsAsync(): Promise<AppSettings> {
+  const { data, error } = await supabase
+    .from('clozer_settings')
+    .select('*')
+    .limit(1)
+    .single();
+  
+  if (error || !data) {
+    return DEFAULT_SETTINGS;
+  }
+  
+  return fromDbSettings(data);
+}
+
 export function getSettings(): AppSettings {
-  return getFromStorage<AppSettings>(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  if (!settingsCacheLoaded) {
+    getSettingsAsync().then(settings => {
+      settingsCache = settings;
+      settingsCacheLoaded = true;
+    });
+  }
+  return settingsCache;
 }
 
 export function updateSettings(updates: Partial<AppSettings>): AppSettings {
-  const settings = getSettings();
-  const newSettings = { ...settings, ...updates };
-  saveToStorage(STORAGE_KEYS.SETTINGS, newSettings);
-  return newSettings;
+  settingsCache = { ...settingsCache, ...updates };
+  
+  // Sync to Supabase in background
+  const dbUpdates: any = {};
+  if (updates.startPoint) {
+    dbUpdates.start_lat = updates.startPoint.lat;
+    dbUpdates.start_lng = updates.startPoint.lng;
+    dbUpdates.start_address = updates.startPoint.address;
+  }
+  if (updates.workStartTime !== undefined) dbUpdates.work_start_time = updates.workStartTime;
+  if (updates.workEndTime !== undefined) dbUpdates.work_end_time = updates.workEndTime;
+  if (updates.lunchBreakStart !== undefined) dbUpdates.lunch_break_start = updates.lunchBreakStart;
+  if (updates.lunchBreakEnd !== undefined) dbUpdates.lunch_break_end = updates.lunchBreakEnd;
+  if (updates.defaultVisitDuration !== undefined) dbUpdates.default_visit_duration = updates.defaultVisitDuration;
+  if (updates.companyName !== undefined) dbUpdates.company_name = updates.companyName;
+  if (updates.companyAddress !== undefined) dbUpdates.company_address = updates.companyAddress;
+  if (updates.companyPhone !== undefined) dbUpdates.company_phone = updates.companyPhone;
+  if (updates.companySiret !== undefined) dbUpdates.company_siret = updates.companySiret;
+  
+  supabase.from('clozer_settings').update(dbUpdates).eq('id', '00000000-0000-0000-0000-000000000001');
+  
+  return settingsCache;
 }
 
 // ==================== USERS ====================
 
-// Utilisateur admin par défaut
+let usersCache: User[] = [];
+let usersCacheLoaded = false;
+
 const DEFAULT_ADMIN: User = {
-  id: 'admin-default',
+  id: '00000000-0000-0000-0000-000000000001',
   name: 'Administrateur',
   email: 'admin@clozer.fr',
   role: 'admin',
@@ -331,85 +917,111 @@ const DEFAULT_ADMIN: User = {
   updatedAt: new Date().toISOString(),
 };
 
-export function getUsers(): User[] {
-  const users = getFromStorage<User[]>(STORAGE_KEYS.USERS, []);
-  // S'assurer qu'il y a toujours au moins l'admin par défaut
-  if (users.length === 0 || !users.some(u => u.role === 'admin')) {
-    const usersWithAdmin = [DEFAULT_ADMIN, ...users.filter(u => u.id !== DEFAULT_ADMIN.id)];
-    saveUsers(usersWithAdmin);
-    return usersWithAdmin;
+export async function getUsersAsync(): Promise<User[]> {
+  const { data, error } = await supabase
+    .from('clozer_users')
+    .select('*')
+    .order('name');
+  
+  if (error) {
+    console.error('Error fetching users:', error);
+    return [DEFAULT_ADMIN];
   }
-  return users;
+  
+  return (data || []).map(fromDbUser);
+}
+
+export function getUsers(): User[] {
+  if (!usersCacheLoaded) {
+    getUsersAsync().then(users => {
+      usersCache = users.length > 0 ? users : [DEFAULT_ADMIN];
+      usersCacheLoaded = true;
+    });
+    return [DEFAULT_ADMIN];
+  }
+  return usersCache.length > 0 ? usersCache : [DEFAULT_ADMIN];
 }
 
 export function saveUsers(users: User[]): void {
-  saveToStorage(STORAGE_KEYS.USERS, users);
+  usersCache = users;
 }
 
 export function getUser(id: string): User | undefined {
-  return getUsers().find(u => u.id === id);
+  return usersCache.find(u => u.id === id);
 }
 
 export function addUser(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): User {
-  const newUser: User = {
+  const tempUser: User = {
     ...user,
     id: generateId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const users = getUsers();
-  users.push(newUser);
-  saveUsers(users);
-  return newUser;
+  
+  usersCache.push(tempUser);
+  
+  // Sync to Supabase in background
+  supabase.from('clozer_users').insert({
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  });
+  
+  return tempUser;
 }
 
 export function updateUser(id: string, updates: Partial<User>): User | null {
-  const users = getUsers();
-  const index = users.findIndex(u => u.id === id);
+  const index = usersCache.findIndex(u => u.id === id);
   if (index === -1) return null;
   
-  users[index] = {
-    ...users[index],
+  usersCache[index] = {
+    ...usersCache[index],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  saveUsers(users);
-  return users[index];
+  
+  // Sync to Supabase in background
+  const dbUpdates: any = {};
+  if (updates.name !== undefined) dbUpdates.name = updates.name;
+  if (updates.email !== undefined) dbUpdates.email = updates.email;
+  if (updates.role !== undefined) dbUpdates.role = updates.role;
+  
+  supabase.from('clozer_users').update(dbUpdates).eq('id', id);
+  
+  return usersCache[index];
 }
 
 export function deleteUser(id: string): boolean {
-  // Ne pas permettre la suppression de l'admin par défaut
-  if (id === 'admin-default') return false;
+  if (id === '00000000-0000-0000-0000-000000000001') return false;
   
-  const users = getUsers();
-  const filtered = users.filter(u => u.id !== id);
-  if (filtered.length === users.length) return false;
-  saveUsers(filtered);
+  usersCache = usersCache.filter(u => u.id !== id);
   
-  // Désassigner tous les clients de cet utilisateur
-  const clients = getClients();
-  const updatedClients = clients.map(c => 
+  // Update clients assigned to this user
+  clientsCache = clientsCache.map(c => 
     c.assignedTo === id ? { ...c, assignedTo: null, updatedAt: new Date().toISOString() } : c
   );
-  saveClients(updatedClients);
+  
+  // Sync to Supabase in background
+  supabase.from('clozer_users').delete().eq('id', id);
+  supabase.from('clozer_clients').update({ assigned_to: null }).eq('assigned_to', id);
   
   return true;
 }
 
 export function getCommerciaux(): User[] {
-  return getUsers().filter(u => u.role === 'commercial');
+  return usersCache.filter(u => u.role === 'commercial');
 }
 
 // ==================== CURRENT USER ====================
 
 export function getCurrentUser(): User | null {
-  const userId = getFromStorage<string | null>(STORAGE_KEYS.CURRENT_USER, null);
+  const userId = getLocalCurrentUserId();
   if (!userId) return null;
   return getUser(userId) || null;
 }
 
 export function setCurrentUser(userId: string | null): void {
-  saveToStorage(STORAGE_KEYS.CURRENT_USER, userId);
+  setLocalCurrentUserId(userId);
 }
 
 export function isAdmin(): boolean {
@@ -420,11 +1032,11 @@ export function isAdmin(): boolean {
 // ==================== CLIENTS PAR COMMERCIAL ====================
 
 export function getClientsByUser(userId: string): Client[] {
-  return getClients().filter(c => c.assignedTo === userId);
+  return clientsCache.filter(c => c.assignedTo === userId);
 }
 
 export function getUnassignedClients(): Client[] {
-  return getClients().filter(c => !c.assignedTo);
+  return clientsCache.filter(c => !c.assignedTo);
 }
 
 export function assignClientToUser(clientId: string, userId: string | null): Client | null {
@@ -432,72 +1044,103 @@ export function assignClientToUser(clientId: string, userId: string | null): Cli
 }
 
 export function assignClientsToUser(clientIds: string[], userId: string | null): void {
-  const clients = getClients();
-  const now = new Date().toISOString();
-  const updatedClients = clients.map(c => 
-    clientIds.includes(c.id) ? { ...c, assignedTo: userId, updatedAt: now } : c
-  );
-  saveClients(updatedClients);
+  clientIds.forEach(clientId => {
+    updateClient(clientId, { assignedTo: userId });
+  });
 }
 
 // ==================== VISIT REPORTS ====================
 
+let reportsCache: VisitReport[] = [];
+let reportsCacheLoaded = false;
+
+export async function getVisitReportsAsync(): Promise<VisitReport[]> {
+  const { data, error } = await supabase
+    .from('clozer_visit_reports')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching visit reports:', error);
+    return [];
+  }
+  
+  return (data || []).map(fromDbVisitReport);
+}
+
 export function getVisitReports(): VisitReport[] {
-  return getFromStorage<VisitReport[]>(STORAGE_KEYS.VISIT_REPORTS, []);
+  if (!reportsCacheLoaded) {
+    getVisitReportsAsync().then(reports => {
+      reportsCache = reports;
+      reportsCacheLoaded = true;
+    });
+  }
+  return reportsCache;
 }
 
 export function saveVisitReports(reports: VisitReport[]): void {
-  saveToStorage(STORAGE_KEYS.VISIT_REPORTS, reports);
+  reportsCache = reports;
 }
 
 export function getVisitReport(id: string): VisitReport | undefined {
-  return getVisitReports().find(r => r.id === id);
+  return reportsCache.find(r => r.id === id);
 }
 
 export function getReportsByVisit(visitId: string): VisitReport[] {
-  return getVisitReports()
+  return reportsCache
     .filter(r => r.visitId === visitId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export function getReportsByClient(clientId: string): VisitReport[] {
-  return getVisitReports()
+  return reportsCache
     .filter(r => r.clientId === clientId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export function addVisitReport(report: Omit<VisitReport, 'id' | 'createdAt' | 'updatedAt'>): VisitReport {
-  const newReport: VisitReport = {
+  const tempReport: VisitReport = {
     ...report,
     id: generateId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const reports = getVisitReports();
-  reports.push(newReport);
-  saveVisitReports(reports);
-  return newReport;
+  
+  reportsCache.push(tempReport);
+  
+  // Sync to Supabase in background
+  supabase.from('clozer_visit_reports').insert({
+    visit_id: report.visitId,
+    client_id: report.clientId,
+    content: report.content,
+    created_by: report.createdBy,
+  });
+  
+  return tempReport;
 }
 
 export function updateVisitReport(id: string, updates: Partial<VisitReport>): VisitReport | null {
-  const reports = getVisitReports();
-  const index = reports.findIndex(r => r.id === id);
+  const index = reportsCache.findIndex(r => r.id === id);
   if (index === -1) return null;
   
-  reports[index] = {
-    ...reports[index],
+  reportsCache[index] = {
+    ...reportsCache[index],
     ...updates,
     updatedAt: new Date().toISOString(),
   };
-  saveVisitReports(reports);
-  return reports[index];
+  
+  // Sync to Supabase in background
+  const dbUpdates: any = {};
+  if (updates.content !== undefined) dbUpdates.content = updates.content;
+  
+  supabase.from('clozer_visit_reports').update(dbUpdates).eq('id', id);
+  
+  return reportsCache[index];
 }
 
 export function deleteVisitReport(id: string): boolean {
-  const reports = getVisitReports();
-  const filtered = reports.filter(r => r.id !== id);
-  if (filtered.length === reports.length) return false;
-  saveVisitReports(filtered);
+  reportsCache = reportsCache.filter(r => r.id !== id);
+  supabase.from('clozer_visit_reports').delete().eq('id', id);
   return true;
 }
 
@@ -505,13 +1148,13 @@ export function deleteVisitReport(id: string): boolean {
 
 export function exportAllData(): string {
   const data = {
-    clients: getClients(),
-    tours: getTours(),
-    visits: getVisits(),
-    quotes: getQuotes(),
-    users: getUsers(),
-    settings: getSettings(),
-    visitReports: getVisitReports(),
+    clients: clientsCache,
+    tours: toursCache,
+    visits: visitsCache,
+    quotes: quotesCache,
+    users: usersCache,
+    settings: settingsCache,
+    visitReports: reportsCache,
     exportedAt: new Date().toISOString(),
   };
   return JSON.stringify(data, null, 2);
@@ -520,13 +1163,13 @@ export function exportAllData(): string {
 export function importAllData(jsonString: string): boolean {
   try {
     const data = JSON.parse(jsonString);
-    if (data.clients) saveClients(data.clients);
-    if (data.tours) saveTours(data.tours);
-    if (data.visits) saveVisits(data.visits);
-    if (data.quotes) saveQuotes(data.quotes);
-    if (data.users) saveUsers(data.users);
-    if (data.settings) saveToStorage(STORAGE_KEYS.SETTINGS, data.settings);
-    if (data.visitReports) saveVisitReports(data.visitReports);
+    if (data.clients) clientsCache = data.clients;
+    if (data.tours) toursCache = data.tours;
+    if (data.visits) visitsCache = data.visits;
+    if (data.quotes) quotesCache = data.quotes;
+    if (data.users) usersCache = data.users;
+    if (data.settings) settingsCache = data.settings;
+    if (data.visitReports) reportsCache = data.visitReports;
     return true;
   } catch {
     return false;
@@ -534,9 +1177,62 @@ export function importAllData(jsonString: string): boolean {
 }
 
 export function clearAllData(): void {
-  Object.values(STORAGE_KEYS).forEach(key => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(key);
-    }
-  });
+  clientsCache = [];
+  toursCache = [];
+  visitsCache = [];
+  quotesCache = [];
+  usersCache = [DEFAULT_ADMIN];
+  settingsCache = DEFAULT_SETTINGS;
+  reportsCache = [];
+  setLocalCurrentUserId(null);
+}
+
+// ==================== INITIAL DATA LOAD ====================
+
+export async function initializeData(): Promise<void> {
+  console.log('Initializing data from Supabase...');
+  
+  try {
+    const [clients, tours, visits, quotes, users, settings, reports] = await Promise.all([
+      getClientsAsync(),
+      getToursAsync(),
+      getVisitsAsync(),
+      getQuotesAsync(),
+      getUsersAsync(),
+      getSettingsAsync(),
+      getVisitReportsAsync(),
+    ]);
+    
+    clientsCache = clients;
+    clientsCacheLoaded = true;
+    
+    toursCache = tours;
+    toursCacheLoaded = true;
+    
+    visitsCache = visits;
+    visitsCacheLoaded = true;
+    
+    quotesCache = quotes;
+    quotesCacheLoaded = true;
+    
+    usersCache = users.length > 0 ? users : [DEFAULT_ADMIN];
+    usersCacheLoaded = true;
+    
+    settingsCache = settings;
+    settingsCacheLoaded = true;
+    
+    reportsCache = reports;
+    reportsCacheLoaded = true;
+    
+    console.log('Data initialized:', {
+      clients: clients.length,
+      tours: tours.length,
+      visits: visits.length,
+      quotes: quotes.length,
+      users: users.length,
+      reports: reports.length,
+    });
+  } catch (error) {
+    console.error('Error initializing data:', error);
+  }
 }
