@@ -3,10 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Client } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +13,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { getClients, updateClient, deleteClient } from '@/lib/storage';
+import { getClients, updateClient, deleteClient, getClientsByUser } from '@/lib/storage';
 import { geocodeAddress } from '@/lib/geocoding';
 import { cleanAddress, formatPhone } from '@/lib/utils';
 import {
@@ -23,22 +22,29 @@ import {
   MapPin,
   CheckCircle,
   AlertCircle,
-  Edit,
   Trash2,
-  RefreshCw,
   Phone,
   User,
-  Filter,
-  X,
   Save,
   ChevronRight,
 } from 'lucide-react';
 import Link from 'next/link';
+import { AuthGuard } from '@/components/auth/AuthGuard';
+import { useUser } from '@/contexts/UserContext';
 
 type FilterType = 'all' | 'geocoded' | 'not_geocoded';
 
 export default function ClientsPage() {
+  return (
+    <AuthGuard>
+      <ClientsContent />
+    </AuthGuard>
+  );
+}
+
+function ClientsContent() {
   const router = useRouter();
+  const { currentUser, isAdmin } = useUser();
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,10 +66,14 @@ export default function ClientsPage() {
     portableMme: '',
   });
 
-  // Load clients
+  // Load clients based on user role
   useEffect(() => {
-    setClients(getClients());
-  }, []);
+    if (isAdmin) {
+      setClients(getClients());
+    } else if (currentUser) {
+      setClients(getClientsByUser(currentUser.id));
+    }
+  }, [isAdmin, currentUser]);
 
   // Filter and search clients
   useEffect(() => {
@@ -133,8 +143,17 @@ export default function ClientsPage() {
         ? null : editingClient.longitude,
     });
 
-    setClients(getClients());
+    reloadClients();
     setEditingClient(null);
+  };
+
+  // Helper to reload clients based on role
+  const reloadClients = () => {
+    if (isAdmin) {
+      setClients(getClients());
+    } else if (currentUser) {
+      setClients(getClientsByUser(currentUser.id));
+    }
   };
 
   // Geocode a single client
@@ -149,7 +168,7 @@ export default function ClientsPage() {
         latitude: result.lat,
         longitude: result.lng,
       });
-      setClients(getClients());
+      reloadClients();
     } else {
       alert(`Impossible de géolocaliser l'adresse:\n${address}\n\nVérifiez et corrigez l'adresse.`);
     }
@@ -160,7 +179,7 @@ export default function ClientsPage() {
   // Delete client
   const handleDelete = (clientId: string) => {
     deleteClient(clientId);
-    setClients(getClients());
+    reloadClients();
     setShowDeleteConfirm(null);
   };
 

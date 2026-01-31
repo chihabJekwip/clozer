@@ -30,9 +30,10 @@ import {
 interface SmartSuggestionsProps {
   onCreateTour: (suggestion: TourSuggestion) => void;
   onRefresh?: () => void;
+  userId?: string; // Si défini, filtre les clients par cet utilisateur
 }
 
-export default function SmartSuggestions({ onCreateTour, onRefresh }: SmartSuggestionsProps) {
+export default function SmartSuggestions({ onCreateTour, onRefresh, userId }: SmartSuggestionsProps) {
   const [plan, setPlan] = useState<DailyPlan | null>(null);
   const [insights, setInsights] = useState<ReturnType<typeof getInsights> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,14 +41,15 @@ export default function SmartSuggestions({ onCreateTour, onRefresh }: SmartSugge
 
   useEffect(() => {
     loadPlan();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   const loadPlan = () => {
     setIsLoading(true);
     // Simuler un petit délai pour l'effet de chargement
     setTimeout(() => {
-      const newPlan = generateSmartPlan();
-      const newInsights = getInsights();
+      const newPlan = generateSmartPlan(userId);
+      const newInsights = getInsights(userId);
       setPlan(newPlan);
       setInsights(newInsights);
       setIsLoading(false);

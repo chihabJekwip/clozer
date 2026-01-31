@@ -125,6 +125,7 @@ export function parseExcelFile(file: ArrayBuffer): {
         ville: '',
         latitude: null,
         longitude: null,
+        assignedTo: null,
       };
 
       columnMapping.forEach((field, colIndex) => {

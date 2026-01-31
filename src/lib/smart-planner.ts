@@ -2,7 +2,7 @@
 // Analyse automatiquement les clients et propose des tournées optimisées
 
 import { Client, Tour, Visit, AppSettings, LatLng } from '@/types';
-import { getClients, getVisits, getTours, getSettings } from './storage';
+import { getClients, getVisits, getTours, getSettings, getClientsByUser } from './storage';
 import { optimizeTour } from './optimization';
 
 export interface TourSuggestion {
@@ -82,8 +82,9 @@ function getSubZone(codePostal: string, ville: string): string {
 }
 
 // Obtenir tous les clients qui n'ont pas encore été visités (jamais en tournée "completed")
-export function getUnvisitedClients(): Client[] {
-  const allClients = getClients();
+export function getUnvisitedClients(userId?: string): Client[] {
+  // Si userId est fourni, filtrer par utilisateur assigné
+  const allClients = userId ? getClientsByUser(userId) : getClients();
   const allVisits = getVisits();
   
   // Trouver les IDs des clients qui ont été visités (status = completed)
@@ -231,9 +232,9 @@ function createTourSuggestion(
 }
 
 // FONCTION PRINCIPALE : Générer le plan intelligent pour aujourd'hui et les prochains jours
-export function generateSmartPlan(): DailyPlan {
+export function generateSmartPlan(userId?: string): DailyPlan {
   const settings = getSettings();
-  const unvisitedClients = getUnvisitedClients();
+  const unvisitedClients = getUnvisitedClients(userId);
   const today = new Date().toISOString().split('T')[0];
   
   if (unvisitedClients.length === 0) {
@@ -345,7 +346,7 @@ export function createTourFromSuggestion(suggestion: TourSuggestion): {
 }
 
 // Analyser l'historique et donner des insights
-export function getInsights(): {
+export function getInsights(userId?: string): {
   totalClients: number;
   visitedClients: number;
   pendingClients: number;
@@ -354,7 +355,7 @@ export function getInsights(): {
   mostVisitedZone: string | null;
   suggestedNextAction: string;
 } {
-  const allClients = getClients();
+  const allClients = userId ? getClientsByUser(userId) : getClients();
   const visitedClientIds = getVisitedClientIds();
   
   // Compter les vrais visités (clients avec une visite completed)

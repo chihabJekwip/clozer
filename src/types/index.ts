@@ -1,5 +1,17 @@
 // Types pour l'application Clozer - Gestion de tournées commerciales
 
+// Types d'utilisateurs et rôles
+export type UserRole = 'admin' | 'commercial';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Client {
   id: string;
   civilite: string;
@@ -13,6 +25,7 @@ export interface Client {
   ville: string;
   latitude: number | null;
   longitude: number | null;
+  assignedTo: string | null; // ID du commercial assigné
   createdAt: string;
   updatedAt: string;
 }
@@ -29,6 +42,7 @@ export interface Tour {
   status: TourStatus;
   totalDistance: number | null; // en mètres
   totalDuration: number | null; // en secondes
+  userId: string | null; // ID du commercial propriétaire
   createdAt: string;
   updatedAt: string;
 }
@@ -115,6 +129,7 @@ export interface AppSettings {
   companyAddress: string;
   companyPhone: string;
   companySiret: string;
+  currentUserId: string | null; // ID de l'utilisateur connecté
 }
 
 // Pour le calcul d'itinéraire

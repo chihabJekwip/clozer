@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Client, Tour, Visit, AppSettings } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Client, Tour, AppSettings } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -24,36 +24,46 @@ import {
   importClients,
   updateClient,
   getSettings,
-  updateSettings,
   clearAllData,
+  getClientsByUser,
+  getToursByUser,
 } from '@/lib/storage';
 import { parseExcelFile, readExcelFile } from '@/lib/excel-import';
 import { geocodeAddressSmart, GeocodingStats } from '@/lib/geocoding';
-import { formatDate } from '@/lib/utils';
 import {
   Upload,
   MapPin,
   Users,
   Route,
   Play,
-  Settings,
   Plus,
   RefreshCw,
   CheckCircle,
   AlertCircle,
   FileSpreadsheet,
-  Calendar,
-  Clock,
-  Brain,
   Database,
-  Edit,
   Trash2,
+  Shield,
+  UserPlus,
+  LogOut,
 } from 'lucide-react';
 import Link from 'next/link';
+import { AuthGuard } from '@/components/auth/AuthGuard';
+import { useUser } from '@/contexts/UserContext';
 
 export default function HomePage() {
+  return (
+    <AuthGuard>
+      <HomeContent />
+    </AuthGuard>
+  );
+}
+
+function HomeContent() {
   const router = useRouter();
+  const { currentUser, isAdmin, logout } = useUser();
   const [clients, setClients] = useState<Client[]>([]);
+  const [allClients, setAllClients] = useState<Client[]>([]);
   const [tours, setTours] = useState<Tour[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,16 +80,26 @@ export default function HomePage() {
   const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Charger les données au démarrage
+  // Charger les données au démarrage selon le rôle
   useEffect(() => {
     const loadData = () => {
-      setClients(getClients());
-      setTours(getTours());
+      const allClientsData = getClients();
+      setAllClients(allClientsData);
+      
+      // Admin voit tout, commercial voit seulement ses clients assignés
+      if (isAdmin) {
+        setClients(allClientsData);
+        setTours(getTours());
+      } else if (currentUser) {
+        setClients(getClientsByUser(currentUser.id));
+        setTours(getToursByUser(currentUser.id));
+      }
+      
       setSettings(getSettings());
       setIsLoading(false);
     };
     loadData();
-  }, []);
+  }, [isAdmin, currentUser]);
 
   // Gérer l'import Excel
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,9 +129,10 @@ export default function HomePage() {
     }
   };
 
-  // Géocoder les clients sans coordonnées avec fallback intelligent
+  // Géocoder les clients sans coordonnées avec fallback intelligent (Admin only)
   const geocodeClients = async () => {
-    const clientsToGeocode = clients.filter(c => !c.latitude || !c.longitude);
+    // Admin géocode tous les clients, pas seulement les siens
+    const clientsToGeocode = allClients.filter(c => !c.latitude || !c.longitude);
     if (clientsToGeocode.length === 0) return;
 
     setIsGeocoding(true);
@@ -162,7 +183,13 @@ export default function HomePage() {
     }
 
     // Recharger les clients
-    setClients(getClients());
+    const allClientsData = getClients();
+    setAllClients(allClientsData);
+    if (isAdmin) {
+      setClients(allClientsData);
+    } else if (currentUser) {
+      setClients(getClientsByUser(currentUser.id));
+    }
     setIsGeocoding(false);
 
     // Afficher un rapport détaillé
@@ -239,12 +266,12 @@ export default function HomePage() {
     router.push(`/tour/${tour.id}`);
   };
 
-  // Vider la base de données
+  // Vider la base de données (Admin only)
   const handleClearDatabase = () => {
     const confirmed = window.confirm(
       `⚠️ ATTENTION !\n\n` +
       `Vous êtes sur le point de supprimer toutes les données :\n` +
-      `• ${clients.length} clients\n` +
+      `• ${allClients.length} clients\n` +
       `• ${tours.length} tournées\n\n` +
       `Cette action est IRRÉVERSIBLE.\n\n` +
       `Voulez-vous continuer ?`
@@ -253,6 +280,7 @@ export default function HomePage() {
     if (confirmed) {
       clearAllData();
       setClients([]);
+      setAllClients([]);
       setTours([]);
       setRefreshKey(prev => prev + 1);
       alert('✅ Base de données vidée avec succès.');
@@ -261,10 +289,8 @@ export default function HomePage() {
 
   // Stats
   const geocodedCount = clients.filter(c => c.latitude && c.longitude).length;
+  const allGeocodedCount = allClients.filter(c => c.latitude && c.longitude).length;
   const activeTours = tours.filter(t => t.status === 'in_progress');
-  const todaysTours = tours.filter(t => 
-    t.date === new Date().toISOString().split('T')[0]
-  );
 
   if (isLoading) {
     return (
@@ -277,6 +303,11 @@ export default function HomePage() {
     );
   }
 
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
+
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       {/* Header */}
@@ -284,16 +315,34 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">Clozer</h1>
-            <p className="text-sm text-primary-foreground/80">
-              Gestion de tournées commerciales
+            <p className="text-sm text-primary-foreground/80 flex items-center gap-2">
+              {isAdmin ? (
+                <>
+                  <Shield className="w-3 h-3" />
+                  Admin
+                </>
+              ) : (
+                <>
+                  Commercial
+                </>
+              )}
+              {currentUser && (
+                <span className="ml-1">• {currentUser.name}</span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden md:inline text-sm text-primary-foreground/80">
               {clients.length} clients • {geocodedCount} géolocalisés
             </span>
-            <Button variant="ghost" size="icon" className="text-white">
-              <Settings className="w-5 h-5" />
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="text-white"
+              onClick={handleLogout}
+              title="Déconnexion"
+            >
+              <LogOut className="w-5 h-5" />
             </Button>
           </div>
         </div>
@@ -342,38 +391,63 @@ export default function HomePage() {
                 <CardTitle className="text-lg">Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-12"
-                  onClick={() => setShowImportDialog(true)}
-                >
-                  <Upload className="w-5 h-5" />
-                  <span>Importer des clients</span>
-                </Button>
+                {/* Actions Admin uniquement */}
+                {isAdmin && (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start gap-3 h-12"
+                      onClick={() => setShowImportDialog(true)}
+                    >
+                      <Upload className="w-5 h-5" />
+                      <span>Importer des clients</span>
+                    </Button>
 
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-12"
-                  onClick={geocodeClients}
-                  disabled={isGeocoding || geocodedCount === clients.length || clients.length === 0}
-                >
-                  {isGeocoding ? (
-                    <>
-                      <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>Géocodage... {geocodingProgress.current}/{geocodingProgress.total}</span>
-                    </>
-                  ) : (
-                    <>
-                      <MapPin className="w-5 h-5" />
-                      <span>Géolocaliser les adresses</span>
-                      {clients.length > 0 && geocodedCount < clients.length && (
-                        <Badge variant="secondary" className="ml-auto">
-                          {clients.length - geocodedCount} restants
-                        </Badge>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start gap-3 h-12"
+                      onClick={geocodeClients}
+                      disabled={isGeocoding || geocodedCount === allClients.length || allClients.length === 0}
+                    >
+                      {isGeocoding ? (
+                        <>
+                          <RefreshCw className="w-5 h-5 animate-spin" />
+                          <span>Géocodage... {geocodingProgress.current}/{geocodingProgress.total}</span>
+                        </>
+                      ) : (
+                        <>
+                          <MapPin className="w-5 h-5" />
+                          <span>Géolocaliser les adresses</span>
+                          {allClients.length > 0 && geocodedCount < allClients.length && (
+                            <Badge variant="secondary" className="ml-auto">
+                              {allClients.length - geocodedCount} restants
+                            </Badge>
+                          )}
+                        </>
                       )}
-                    </>
-                  )}
-                </Button>
+                    </Button>
+
+                    <Link href="/admin/users" className="block">
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start gap-3 h-12"
+                      >
+                        <Users className="w-5 h-5" />
+                        <span>Gérer les utilisateurs</span>
+                      </Button>
+                    </Link>
+
+                    <Link href="/admin/assignments" className="block">
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start gap-3 h-12"
+                      >
+                        <UserPlus className="w-5 h-5" />
+                        <span>Assigner les clients</span>
+                      </Button>
+                    </Link>
+                  </>
+                )}
 
                 <Button
                   variant="outline"
@@ -402,7 +476,8 @@ export default function HomePage() {
                   </Link>
                 )}
 
-                {clients.length > 0 && (
+                {/* Vider BDD - Admin uniquement */}
+                {isAdmin && allClients.length > 0 && (
                   <Button
                     variant="outline"
                     className="w-full justify-start gap-3 h-12 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -508,9 +583,17 @@ export default function HomePage() {
               <SmartSuggestions 
                 key={refreshKey}
                 onCreateTour={handleCreateFromSuggestion}
+                userId={isAdmin ? undefined : currentUser?.id}
                 onRefresh={() => {
-                  setClients(getClients());
-                  setTours(getTours());
+                  const allClientsData = getClients();
+                  setAllClients(allClientsData);
+                  if (isAdmin) {
+                    setClients(allClientsData);
+                    setTours(getTours());
+                  } else if (currentUser) {
+                    setClients(getClientsByUser(currentUser.id));
+                    setTours(getToursByUser(currentUser.id));
+                  }
                 }}
               />
             ) : clients.length === 0 ? (
