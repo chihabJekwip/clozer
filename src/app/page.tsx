@@ -265,7 +265,8 @@ function HomeContent() {
       newTourName,
       newTourDate,
       Array.from(selectedClients),
-      startPoint || customStartPoint || undefined
+      startPoint || customStartPoint || undefined,
+      currentUser?.id
     );
 
     if (isAdmin) {
@@ -310,7 +311,8 @@ function HomeContent() {
       pendingSuggestion.name,
       pendingSuggestion.date,
       clientIds,
-      startPoint || undefined
+      startPoint || undefined,
+      currentUser?.id
     );
     
     if (isAdmin) {

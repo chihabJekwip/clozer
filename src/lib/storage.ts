@@ -279,31 +279,26 @@ function fromDbUserSupervisor(db: any): UserSupervisor {
   };
 }
 
-// ==================== LOCAL STORAGE FOR CURRENT USER ====================
-// Current user is stored locally for session persistence
+// ==================== CURRENT USER ====================
+// Note: Authentication is now handled by Supabase Auth via UserContext
+// These functions are kept for backward compatibility but session is managed by Supabase
 
-const CURRENT_USER_KEY = 'clozer_current_user';
+// Variable to store current user ID (set by UserContext after Supabase Auth)
+let currentAuthUserId: string | null = null;
 
-function getLocalCurrentUserId(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem(CURRENT_USER_KEY);
-  } catch {
-    return null;
-  }
+/**
+ * Set the current authenticated user ID
+ * Called by UserContext after Supabase Auth login
+ */
+export function setAuthenticatedUserId(userId: string | null): void {
+  currentAuthUserId = userId;
 }
 
-function setLocalCurrentUserId(userId: string | null): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (userId) {
-      localStorage.setItem(CURRENT_USER_KEY, userId);
-    } else {
-      localStorage.removeItem(CURRENT_USER_KEY);
-    }
-  } catch {
-    // Ignore
-  }
+/**
+ * Get the current authenticated user ID
+ */
+export function getAuthenticatedUserId(): string | null {
+  return currentAuthUserId;
 }
 
 // ==================== CLIENTS ====================
@@ -568,9 +563,14 @@ export function getTour(id: string): Tour | undefined {
   return toursCache.find(t => t.id === id);
 }
 
-export async function createTourAsync(name: string, date: string, clientIds: string[]): Promise<Tour | null> {
+export async function createTourAsync(
+  name: string, 
+  date: string, 
+  clientIds: string[],
+  userId?: string | null
+): Promise<Tour | null> {
   const settings = getSettings();
-  const currentUser = getCurrentUser();
+  const effectiveUserId = userId ?? currentAuthUserId;
   
   const { data: tourData, error: tourError } = await supabase
     .from('clozer_tours')
@@ -581,7 +581,7 @@ export async function createTourAsync(name: string, date: string, clientIds: str
       start_lng: settings.startPoint.lng,
       start_address: settings.startPoint.address,
       status: 'planning',
-      user_id: currentUser?.id || null,
+      user_id: effectiveUserId || null,
     })
     .select()
     .single();
@@ -621,10 +621,11 @@ export function createTour(
   name: string, 
   date: string, 
   clientIds: string[],
-  customStartPoint?: { lat: number; lng: number; address: string }
+  customStartPoint?: { lat: number; lng: number; address: string },
+  userId?: string | null
 ): Tour {
   const settings = getSettings();
-  const currentUser = getCurrentUser();
+  const effectiveUserId = userId ?? currentAuthUserId;
   const tourId = generateId();
   const now = new Date().toISOString();
   
@@ -646,7 +647,7 @@ export function createTour(
     status: 'planning',
     totalDistance: null,
     totalDuration: null,
-    userId: currentUser?.id || null,
+    userId: effectiveUserId || null,
     // V2 fields
     startAddressId: null,
     finalReport: null,
@@ -692,7 +693,7 @@ export function createTour(
     start_lng: startPoint.lng,
     start_address: startPoint.address,
     status: 'planning',
-    user_id: currentUser?.id || null,
+    user_id: effectiveUserId || null,
     created_at: now,
     updated_at: now,
   }).then(({ error: tourError }) => {
@@ -1276,18 +1277,29 @@ export function getCommerciaux(): User[] {
   return usersCache.filter(u => u.role === 'commercial');
 }
 
-// ==================== CURRENT USER ====================
+// ==================== CURRENT USER HELPERS ====================
 
+/**
+ * Get the current user from cache using the authenticated user ID
+ * @deprecated Use UserContext.currentUser instead for React components
+ */
 export function getCurrentUser(): User | null {
-  const userId = getLocalCurrentUserId();
-  if (!userId) return null;
-  return getUser(userId) || null;
+  if (!currentAuthUserId) return null;
+  return getUser(currentAuthUserId) || null;
 }
 
+/**
+ * @deprecated Session is now managed by Supabase Auth via UserContext
+ * Use setAuthenticatedUserId instead
+ */
 export function setCurrentUser(userId: string | null): void {
-  setLocalCurrentUserId(userId);
+  setAuthenticatedUserId(userId);
 }
 
+/**
+ * Check if the current authenticated user is an admin
+ * @deprecated Use UserContext.isAdmin instead
+ */
 export function isAdmin(): boolean {
   const user = getCurrentUser();
   return user?.role === 'admin';
@@ -1950,7 +1962,7 @@ export async function clearAllData(): Promise<void> {
   userAddressesCache = [];
   reactivationRequestsCache = [];
   userSupervisorsCache = [];
-  setLocalCurrentUserId(null);
+  currentAuthUserId = null;
 }
 
 // ==================== INITIAL DATA LOAD ====================

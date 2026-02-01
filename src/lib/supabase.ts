@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, AuthChangeEvent, Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 // Lazy initialization to prevent build-time errors when env vars are not available
 let supabaseInstance: SupabaseClient | null = null;
@@ -197,4 +197,111 @@ export interface DbUserSupervisor {
   user_id: string;
   supervisor_id: string;
   created_at: string;
+}
+
+// ==================== AUTHENTICATION HELPERS ====================
+
+/**
+ * Sign in with email and password
+ */
+export async function signIn(email: string, password: string): Promise<{
+  success: boolean;
+  user?: SupabaseUser;
+  error?: string;
+}> {
+  try {
+    const { data, error } = await getSupabase().auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      // Translate common errors to French
+      let errorMessage = error.message;
+      if (error.message.includes('Invalid login credentials')) {
+        errorMessage = 'Email ou mot de passe incorrect';
+      } else if (error.message.includes('Email not confirmed')) {
+        errorMessage = 'Veuillez confirmer votre email avant de vous connecter';
+      } else if (error.message.includes('Too many requests')) {
+        errorMessage = 'Trop de tentatives. Veuillez réessayer plus tard.';
+      }
+      return { success: false, error: errorMessage };
+    }
+
+    return { success: true, user: data.user ?? undefined };
+  } catch (err) {
+    console.error('Sign in error:', err);
+    return { success: false, error: 'Une erreur est survenue lors de la connexion' };
+  }
+}
+
+/**
+ * Sign out the current user
+ */
+export async function signOut(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await getSupabase().auth.signOut();
+    
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    
+    return { success: true };
+  } catch (err) {
+    console.error('Sign out error:', err);
+    return { success: false, error: 'Une erreur est survenue lors de la déconnexion' };
+  }
+}
+
+/**
+ * Get the current session
+ */
+export async function getSession(): Promise<{
+  session: Session | null;
+  user: SupabaseUser | null;
+}> {
+  try {
+    const { data: { session }, error } = await getSupabase().auth.getSession();
+    
+    if (error) {
+      console.error('Get session error:', error);
+      return { session: null, user: null };
+    }
+    
+    return { session, user: session?.user ?? null };
+  } catch (err) {
+    console.error('Get session error:', err);
+    return { session: null, user: null };
+  }
+}
+
+/**
+ * Subscribe to auth state changes
+ * Returns an unsubscribe function
+ */
+export function onAuthStateChange(
+  callback: (event: AuthChangeEvent, session: Session | null) => void
+): () => void {
+  const { data: { subscription } } = getSupabase().auth.onAuthStateChange(callback);
+  return () => subscription.unsubscribe();
+}
+
+/**
+ * Get the current authenticated user (synchronous check from session)
+ */
+export async function getAuthUser(): Promise<SupabaseUser | null> {
+  const { data: { user } } = await getSupabase().auth.getUser();
+  return user;
+}
+
+/**
+ * Refresh the current session
+ */
+export async function refreshSession(): Promise<Session | null> {
+  const { data: { session }, error } = await getSupabase().auth.refreshSession();
+  if (error) {
+    console.error('Refresh session error:', error);
+    return null;
+  }
+  return session;
 }

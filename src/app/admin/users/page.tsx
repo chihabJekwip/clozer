@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { User, UserRole } from '@/types';
-import { getUsers, addUser, updateUser, deleteUser, getClientsByUser } from '@/lib/storage';
+import { getUsers, updateUser, getClientsByUser, getUsersAsync } from '@/lib/storage';
 import { useUser } from '@/contexts/UserContext';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { 
@@ -20,7 +20,12 @@ import {
   Briefcase,
   Users,
   Save,
-  X
+  X,
+  Loader2,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Lock
 } from 'lucide-react';
 
 export default function AdminUsersPage() {
@@ -37,9 +42,13 @@ function AdminUsersContent() {
   const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    password: '',
     role: 'commercial' as UserRole,
   });
 
@@ -47,45 +56,91 @@ function AdminUsersContent() {
     loadUsers();
   }, []);
 
-  const loadUsers = () => {
-    setUsers(getUsers());
+  const loadUsers = async () => {
+    const allUsers = await getUsersAsync();
+    setUsers(allUsers);
   };
 
   const handleCreate = () => {
     setIsCreating(true);
     setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'commercial' });
+    setError(null);
+    setFormData({ name: '', email: '', password: '', role: 'commercial' });
   };
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
     setIsCreating(false);
-    setFormData({ name: user.name, email: user.email, role: user.role });
+    setError(null);
+    setFormData({ name: user.name, email: user.email, password: '', role: user.role });
   };
 
-  const handleSave = () => {
-    if (!formData.name || !formData.email) return;
-
-    if (isCreating) {
-      addUser({
-        ...formData,
-        notificationPreferences: { email: true, push: true, sms: false },
-        theme: 'system',
-        language: 'fr',
-      });
-    } else if (editingUser) {
-      updateUser(editingUser.id, formData);
+  const handleSave = async () => {
+    if (!formData.name || !formData.email) {
+      setError('Le nom et l\'email sont requis');
+      return;
     }
 
-    loadUsers();
-    refreshUsers();
-    setIsCreating(false);
-    setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'commercial' });
+    // For creation, password is required
+    if (isCreating && !formData.password) {
+      setError('Le mot de passe est requis pour créer un utilisateur');
+      return;
+    }
+
+    if (isCreating && formData.password.length < 6) {
+      setError('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      if (isCreating) {
+        // Call API to create user with Supabase Auth
+        const response = await fetch('/api/auth/create-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+            role: formData.role,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          setError(result.error || 'Erreur lors de la création');
+          setIsSubmitting(false);
+          return;
+        }
+      } else if (editingUser) {
+        // For editing, we only update name, email, role (not password for now)
+        updateUser(editingUser.id, {
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+        });
+      }
+
+      await loadUsers();
+      refreshUsers();
+      setIsCreating(false);
+      setEditingUser(null);
+      setFormData({ name: '', email: '', password: '', role: 'commercial' });
+    } catch (err) {
+      console.error('Save error:', err);
+      setError('Une erreur est survenue');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (user: User) => {
-    if (user.id === 'admin-default') {
+  const handleDelete = async (user: User) => {
+    // Check for default admin ID
+    if (user.id === '00000000-0000-0000-0000-000000000001') {
       alert('Impossible de supprimer l\'administrateur par défaut');
       return;
     }
@@ -96,16 +151,31 @@ function AdminUsersContent() {
       : `Êtes-vous sûr de vouloir supprimer ${user.name} ?`;
 
     if (confirm(message)) {
-      deleteUser(user.id);
-      loadUsers();
-      refreshUsers();
+      try {
+        const response = await fetch(`/api/auth/create-user?userId=${user.id}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          const result = await response.json();
+          alert(result.error || 'Erreur lors de la suppression');
+          return;
+        }
+
+        await loadUsers();
+        refreshUsers();
+      } catch (err) {
+        console.error('Delete error:', err);
+        alert('Erreur lors de la suppression');
+      }
     }
   };
 
   const handleCancel = () => {
     setIsCreating(false);
     setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'commercial' });
+    setError(null);
+    setFormData({ name: '', email: '', password: '', role: 'commercial' });
   };
 
   const admins = users.filter(u => u.role === 'admin');
@@ -123,7 +193,7 @@ function AdminUsersContent() {
             <h1 className="text-xl font-bold">Gestion des Utilisateurs</h1>
             <p className="text-sm text-gray-500">Gérer les administrateurs et commerciaux</p>
           </div>
-          <Button onClick={handleCreate}>
+          <Button onClick={handleCreate} disabled={isCreating || !!editingUser}>
             <Plus className="w-4 h-4 mr-2" />
             Ajouter
           </Button>
@@ -138,8 +208,20 @@ function AdminUsersContent() {
               <CardTitle>
                 {isCreating ? 'Nouvel utilisateur' : `Modifier ${editingUser?.name}`}
               </CardTitle>
+              {isCreating && (
+                <CardDescription>
+                  Un compte sera créé avec l'email et le mot de passe définis
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nom</Label>
@@ -148,6 +230,7 @@ function AdminUsersContent() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Jean Dupont"
+                    disabled={isSubmitting}
                   />
                 </div>
                 <div className="space-y-2">
@@ -158,16 +241,52 @@ function AdminUsersContent() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="jean.dupont@exemple.fr"
+                    disabled={isSubmitting}
                   />
                 </div>
               </div>
+
+              {/* Password field - only for creation */}
+              {isCreating && (
+                <div className="space-y-2">
+                  <Label htmlFor="password">Mot de passe</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Minimum 6 caractères"
+                      className="pl-10 pr-10"
+                      disabled={isSubmitting}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    L'utilisateur pourra se connecter avec cet email et ce mot de passe
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="role">Rôle</Label>
                 <Select 
                   value={formData.role} 
                   onValueChange={(value) => setFormData({ ...formData, role: value as UserRole })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger disabled={isSubmitting}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -187,11 +306,20 @@ function AdminUsersContent() {
                 </Select>
               </div>
               <div className="flex gap-2">
-                <Button onClick={handleSave}>
-                  <Save className="w-4 h-4 mr-2" />
-                  Enregistrer
+                <Button onClick={handleSave} disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Enregistrement...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Enregistrer
+                    </>
+                  )}
                 </Button>
-                <Button variant="outline" onClick={handleCancel}>
+                <Button variant="outline" onClick={handleCancel} disabled={isSubmitting}>
                   <X className="w-4 h-4 mr-2" />
                   Annuler
                 </Button>
@@ -226,7 +354,7 @@ function AdminUsersContent() {
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(user)}>
                       <Pencil className="w-4 h-4" />
                     </Button>
-                    {user.id !== 'admin-default' && (
+                    {user.id !== '00000000-0000-0000-0000-000000000001' && (
                       <Button 
                         variant="ghost" 
                         size="icon" 
