@@ -1919,7 +1919,25 @@ export function importAllData(jsonString: string): boolean {
   }
 }
 
-export function clearAllData(): void {
+export async function clearAllData(): Promise<void> {
+  // Clear Supabase tables (order matters due to foreign keys)
+  try {
+    // First delete dependent tables
+    await supabase.from('clozer_visit_reports').delete().neq('id', '');
+    await supabase.from('clozer_tour_notes').delete().neq('id', '');
+    await supabase.from('clozer_visits').delete().neq('id', '');
+    await supabase.from('clozer_quotes').delete().neq('id', '');
+    await supabase.from('clozer_tours').delete().neq('id', '');
+    await supabase.from('clozer_clients').delete().neq('id', '');
+    await supabase.from('clozer_user_addresses').delete().neq('id', '');
+    await supabase.from('clozer_reactivation_requests').delete().neq('id', '');
+    await supabase.from('clozer_user_supervisors').delete().neq('id', '');
+    console.log('✅ Database cleared successfully');
+  } catch (error) {
+    console.error('Error clearing database:', error);
+  }
+
+  // Clear in-memory caches
   clientsCache = [];
   toursCache = [];
   visitsCache = [];

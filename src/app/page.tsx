@@ -294,18 +294,18 @@ function HomeContent() {
     }
   };
 
-  const handleClearDatabase = () => {
+  const handleClearDatabase = async () => {
     const confirmed = window.confirm(
-      `⚠️ ATTENTION !\n\nSupprimer toutes les données ?\n• ${allClients.length} clients\n• ${tours.length} tournées\n\nCette action est IRRÉVERSIBLE.`
+      `⚠️ ATTENTION !\n\nSupprimer toutes les données ?\n• ${allClients.length} clients\n• ${tours.length} tournées\n• Toutes les visites et notes\n\nCette action est IRRÉVERSIBLE.`
     );
     
     if (confirmed) {
-      clearAllData();
+      await clearAllData();
       setClients([]);
       setAllClients([]);
       setTours([]);
       setRefreshKey(prev => prev + 1);
-      alert('✅ Base de données vidée.');
+      alert('✅ Base de données vidée (clients, tournées, visites, notes).');
     }
   };
 
