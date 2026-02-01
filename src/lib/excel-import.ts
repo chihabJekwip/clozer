@@ -1,14 +1,26 @@
 // Import de fichiers Excel pour les clients
 import * as XLSX from 'xlsx';
-import { Client } from '@/types';
+import { Client, User } from '@/types';
 import { generateId } from './utils';
 
 interface ExcelRow {
   [key: string]: string | number | undefined;
 }
 
+// Extended client type with commercial name from import
+export interface ImportedClient extends Omit<Client, 'id' | 'createdAt' | 'updatedAt'> {
+  commercialName?: string; // Name from Excel file
+}
+
+export interface ImportResult {
+  clients: ImportedClient[];
+  errors: string[];
+  hasCommercialColumn: boolean;
+  unmatchedCommercials: string[]; // Commercial names that couldn't be matched to users
+}
+
 // Mapping des colonnes Excel vers les champs Client
-const COLUMN_MAPPING: Record<string, keyof Client> = {
+const COLUMN_MAPPING: Record<string, keyof Client | 'commercial'> = {
   'civilite': 'civilite',
   'civilité': 'civilite',
   'nom': 'nom',
@@ -33,24 +45,44 @@ const COLUMN_MAPPING: Record<string, keyof Client> = {
   'ville': 'ville',
   'ville (corresp.)': 'ville',
   'ville (corresp)': 'ville',
+  // Commercial assignment columns
+  'commercial': 'commercial',
+  'commerciale': 'commercial',
+  'assigné à': 'commercial',
+  'assigne a': 'commercial',
+  'assigned to': 'commercial',
+  'vendeur': 'commercial',
+  'responsable': 'commercial',
 };
 
 function normalizeColumnName(name: string): string {
   return name.toLowerCase().trim();
 }
 
-function findColumnMapping(headers: string[]): Map<number, keyof Client> {
-  const mapping = new Map<number, keyof Client>();
+interface ColumnMappingResult {
+  mapping: Map<number, keyof Client | 'commercial'>;
+  hasCommercialColumn: boolean;
+  commercialColumnIndex: number | null;
+}
+
+function findColumnMapping(headers: string[]): ColumnMappingResult {
+  const mapping = new Map<number, keyof Client | 'commercial'>();
+  let hasCommercialColumn = false;
+  let commercialColumnIndex: number | null = null;
   
   headers.forEach((header, index) => {
     const normalized = normalizeColumnName(header);
-    const clientField = COLUMN_MAPPING[normalized];
-    if (clientField) {
-      mapping.set(index, clientField);
+    const field = COLUMN_MAPPING[normalized];
+    if (field) {
+      mapping.set(index, field);
+      if (field === 'commercial') {
+        hasCommercialColumn = true;
+        commercialColumnIndex = index;
+      }
     }
   });
   
-  return mapping;
+  return { mapping, hasCommercialColumn, commercialColumnIndex };
 }
 
 function cleanValue(value: string | number | undefined): string | null {
@@ -58,12 +90,11 @@ function cleanValue(value: string | number | undefined): string | null {
   return String(value).trim();
 }
 
-export function parseExcelFile(file: ArrayBuffer): {
-  clients: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[];
-  errors: string[];
-} {
+export function parseExcelFile(file: ArrayBuffer): ImportResult {
   const errors: string[] = [];
-  const clients: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+  const clients: ImportedClient[] = [];
+  const unmatchedCommercials = new Set<string>();
+  let hasCommercialColumn = false;
 
   try {
     const workbook = XLSX.read(file, { type: 'array' });
@@ -75,7 +106,7 @@ export function parseExcelFile(file: ArrayBuffer): {
     
     if (jsonData.length < 2) {
       errors.push('Le fichier doit contenir au moins une ligne d\'en-tête et une ligne de données');
-      return { clients, errors };
+      return { clients, errors, hasCommercialColumn: false, unmatchedCommercials: [] };
     }
 
     // Trouver la ligne d'en-tête (chercher une ligne avec "Civilité" ou "Nom")
@@ -93,15 +124,17 @@ export function parseExcelFile(file: ArrayBuffer): {
 
     if (headerRowIndex === -1) {
       errors.push('Impossible de trouver la ligne d\'en-tête');
-      return { clients, errors };
+      return { clients, errors, hasCommercialColumn: false, unmatchedCommercials: [] };
     }
 
     const headers = (jsonData[headerRowIndex] as unknown as string[]).map(h => String(h || ''));
-    const columnMapping = findColumnMapping(headers);
+    const mappingResult = findColumnMapping(headers);
+    const columnMapping = mappingResult.mapping;
+    hasCommercialColumn = mappingResult.hasCommercialColumn;
 
     if (columnMapping.size === 0) {
       errors.push('Aucune colonne reconnue dans le fichier');
-      return { clients, errors };
+      return { clients, errors, hasCommercialColumn: false, unmatchedCommercials: [] };
     }
 
     // Parser les données
@@ -113,7 +146,7 @@ export function parseExcelFile(file: ArrayBuffer): {
       const hasData = row.some(cell => cell !== undefined && cell !== null && cell !== '');
       if (!hasData) continue;
 
-      const client: Partial<Client> = {
+      const client: Partial<ImportedClient> = {
         civilite: '',
         nom: '',
         prenom: '',
@@ -126,14 +159,24 @@ export function parseExcelFile(file: ArrayBuffer): {
         latitude: null,
         longitude: null,
         assignedTo: null,
+        commercialName: undefined,
       };
 
       columnMapping.forEach((field, colIndex) => {
         const value = cleanValue(row[colIndex]);
         if (value !== null) {
-          (client as Record<string, string | number | null>)[field] = value;
+          if (field === 'commercial') {
+            client.commercialName = value;
+          } else {
+            (client as Record<string, string | number | null>)[field] = value;
+          }
         }
       });
+
+      // Track commercial names for later matching
+      if (client.commercialName) {
+        unmatchedCommercials.add(client.commercialName);
+      }
 
       // Vérifier les champs obligatoires
       if (!client.nom || !client.adresse || !client.codePostal || !client.ville) {
@@ -141,7 +184,7 @@ export function parseExcelFile(file: ArrayBuffer): {
         continue;
       }
 
-      clients.push(client as Omit<Client, 'id' | 'createdAt' | 'updatedAt'>);
+      clients.push(client as ImportedClient);
     }
 
     if (clients.length === 0) {
@@ -152,7 +195,62 @@ export function parseExcelFile(file: ArrayBuffer): {
     errors.push(`Erreur lors de la lecture du fichier: ${error}`);
   }
 
-  return { clients, errors };
+  return { 
+    clients, 
+    errors, 
+    hasCommercialColumn, 
+    unmatchedCommercials: Array.from(unmatchedCommercials) 
+  };
+}
+
+// Match commercial names to user IDs
+export function matchCommercialsToUsers(
+  clients: ImportedClient[], 
+  users: User[]
+): {
+  matchedClients: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[];
+  unmatchedCommercials: string[];
+  clientsWithoutCommercial: number;
+} {
+  const unmatchedSet = new Set<string>();
+  let clientsWithoutCommercial = 0;
+
+  // Create a map of user names (normalized) to user IDs
+  const userNameMap = new Map<string, string>();
+  users.forEach(user => {
+    // Match by full name (case insensitive)
+    userNameMap.set(user.name.toLowerCase().trim(), user.id);
+    // Also try first name only
+    const firstName = user.name.split(' ')[0].toLowerCase().trim();
+    if (!userNameMap.has(firstName)) {
+      userNameMap.set(firstName, user.id);
+    }
+  });
+
+  const matchedClients = clients.map(client => {
+    const { commercialName, ...clientData } = client;
+    
+    if (commercialName) {
+      const normalizedName = commercialName.toLowerCase().trim();
+      const userId = userNameMap.get(normalizedName);
+      
+      if (userId) {
+        return { ...clientData, assignedTo: userId };
+      } else {
+        unmatchedSet.add(commercialName);
+        return { ...clientData, assignedTo: null };
+      }
+    } else {
+      clientsWithoutCommercial++;
+      return { ...clientData, assignedTo: null };
+    }
+  });
+
+  return {
+    matchedClients,
+    unmatchedCommercials: Array.from(unmatchedSet),
+    clientsWithoutCommercial,
+  };
 }
 
 // Lire un fichier depuis un input HTML

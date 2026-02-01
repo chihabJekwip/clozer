@@ -29,7 +29,9 @@ import {
   getClientsByUser,
   getToursByUser,
 } from '@/lib/storage';
-import { parseExcelFile, readExcelFile } from '@/lib/excel-import';
+import { parseExcelFile, readExcelFile, matchCommercialsToUsers, ImportedClient } from '@/lib/excel-import';
+import ImportAssignmentDialog from '@/components/import/ImportAssignmentDialog';
+import { getUsers } from '@/lib/storage';
 import { geocodeAddressSmart, GeocodingStats } from '@/lib/geocoding';
 import {
   Upload,
@@ -92,6 +94,12 @@ function HomeContent() {
   const [showStartPointSelector, setShowStartPointSelector] = useState(false);
   const [customStartPoint, setCustomStartPoint] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const [pendingSuggestion, setPendingSuggestion] = useState<TourSuggestion | null>(null);
+  
+  // Import assignment state
+  const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
+  const [pendingImportClients, setPendingImportClients] = useState<Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[]>([]);
+  const [unmatchedCommercials, setUnmatchedCommercials] = useState<string[]>([]);
+  const [clientsWithoutCommercial, setClientsWithoutCommercial] = useState(0);
 
   // Charger les données
   useEffect(() => {
@@ -123,22 +131,56 @@ function HomeContent() {
 
     try {
       const buffer = await readExcelFile(file);
-      const { clients: parsedClients, errors } = parseExcelFile(buffer);
+      const { clients: parsedClients, errors, hasCommercialColumn, unmatchedCommercials: fileUnmatched } = parseExcelFile(buffer);
 
       if (errors.length > 0) {
         setImportErrors(errors);
       }
 
       if (parsedClients.length > 0) {
-        const imported = importClients(parsedClients);
-        setClients(imported);
-        setShowImportDialog(false);
+        // Get all users for matching
+        const users = getUsers();
+        
+        // Match commercial names to user IDs
+        const { matchedClients, unmatchedCommercials: unmatched, clientsWithoutCommercial: noCommercial } = 
+          matchCommercialsToUsers(parsedClients, users);
+
+        // Check if we need to show the assignment dialog
+        const needsManualAssignment = unmatched.length > 0 || noCommercial > 0;
+        
+        if (needsManualAssignment) {
+          // Store pending import data and show assignment dialog
+          setPendingImportClients(matchedClients);
+          setUnmatchedCommercials(unmatched);
+          setClientsWithoutCommercial(noCommercial);
+          setShowImportDialog(false);
+          setShowAssignmentDialog(true);
+        } else {
+          // All clients are assigned, import directly
+          const imported = importClients(matchedClients);
+          setClients(imported);
+          setAllClients(imported);
+          setShowImportDialog(false);
+          alert(`✅ ${imported.length} clients importés avec succès !`);
+        }
       }
     } catch (error) {
       setImportErrors([`Erreur: ${error}`]);
     } finally {
       setIsImporting(false);
     }
+  };
+
+  // Handle confirmed import with assignments
+  const handleConfirmImport = (clientsToImport: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[]) => {
+    const imported = importClients(clientsToImport);
+    setClients(imported);
+    setAllClients(imported);
+    setShowAssignmentDialog(false);
+    setPendingImportClients([]);
+    setUnmatchedCommercials([]);
+    setClientsWithoutCommercial(0);
+    alert(`✅ ${imported.length} clients importés avec succès !`);
   };
 
   // Géocoder les clients
@@ -715,12 +757,28 @@ function HomeContent() {
               </div>
             )}
 
-            <p className="text-xs text-muted-foreground">
-              Colonnes : Civilité, Nom, Prénom, Domicile, Portable M., Portable Mme, Adresse, CP, Ville
-            </p>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p><strong>Colonnes reconnues :</strong></p>
+              <p>Civilité, Nom, Prénom, Domicile, Portable M., Portable Mme, Adresse, CP, Ville</p>
+              <p className="text-primary"><strong>+ Commercial</strong> (optionnel) : pour assigner automatiquement les clients</p>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Import Assignment Dialog */}
+      <ImportAssignmentDialog
+        open={showAssignmentDialog}
+        onClose={() => {
+          setShowAssignmentDialog(false);
+          setPendingImportClients([]);
+        }}
+        clients={pendingImportClients}
+        unmatchedCommercials={unmatchedCommercials}
+        clientsWithoutCommercial={clientsWithoutCommercial}
+        users={getUsers()}
+        onConfirm={handleConfirmImport}
+      />
 
       {/* New Tour Dialog */}
       <Dialog open={showNewTourDialog} onOpenChange={setShowNewTourDialog}>
