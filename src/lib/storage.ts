@@ -1934,17 +1934,35 @@ export function importAllData(jsonString: string): boolean {
 export async function clearAllData(): Promise<void> {
   // Clear Supabase tables (order matters due to foreign keys)
   try {
-    // First delete dependent tables
-    await supabase.from('clozer_visit_reports').delete().neq('id', '');
-    await supabase.from('clozer_tour_notes').delete().neq('id', '');
-    await supabase.from('clozer_visits').delete().neq('id', '');
-    await supabase.from('clozer_quotes').delete().neq('id', '');
-    await supabase.from('clozer_tours').delete().neq('id', '');
-    await supabase.from('clozer_clients').delete().neq('id', '');
-    await supabase.from('clozer_user_addresses').delete().neq('id', '');
-    await supabase.from('clozer_reactivation_requests').delete().neq('id', '');
-    await supabase.from('clozer_user_supervisors').delete().neq('id', '');
-    console.log('✅ Database cleared successfully');
+    // First delete dependent tables (using gte on created_at to match all records)
+    const { error: e1 } = await supabase.from('clozer_visit_reports').delete().gte('created_at', '1970-01-01');
+    if (e1) console.error('Error deleting visit_reports:', e1);
+    
+    const { error: e2 } = await supabase.from('clozer_tour_notes').delete().gte('created_at', '1970-01-01');
+    if (e2) console.error('Error deleting tour_notes:', e2);
+    
+    const { error: e3 } = await supabase.from('clozer_visits').delete().gte('created_at', '1970-01-01');
+    if (e3) console.error('Error deleting visits:', e3);
+    
+    const { error: e4 } = await supabase.from('clozer_quotes').delete().gte('created_at', '1970-01-01');
+    if (e4) console.error('Error deleting quotes:', e4);
+    
+    const { error: e5 } = await supabase.from('clozer_tours').delete().gte('created_at', '1970-01-01');
+    if (e5) console.error('Error deleting tours:', e5);
+    
+    const { error: e6 } = await supabase.from('clozer_clients').delete().gte('created_at', '1970-01-01');
+    if (e6) console.error('Error deleting clients:', e6);
+    
+    const { error: e7 } = await supabase.from('clozer_user_addresses').delete().gte('created_at', '1970-01-01');
+    if (e7) console.error('Error deleting user_addresses:', e7);
+    
+    const { error: e8 } = await supabase.from('clozer_reactivation_requests').delete().gte('created_at', '1970-01-01');
+    if (e8) console.error('Error deleting reactivation_requests:', e8);
+    
+    const { error: e9 } = await supabase.from('clozer_user_supervisors').delete().gte('created_at', '1970-01-01');
+    if (e9) console.error('Error deleting user_supervisors:', e9);
+    
+    console.log('✅ Database cleared successfully (clients, tours, visits, notes, quotes)');
   } catch (error) {
     console.error('Error clearing database:', error);
   }
