@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Client } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/ui/input';
+import { Badge, StatusBadge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,6 @@ import { geocodeAddress } from '@/lib/geocoding';
 import { cleanAddress, formatPhone } from '@/lib/utils';
 import {
   ArrowLeft,
-  Search,
   MapPin,
   CheckCircle,
   AlertCircle,
@@ -28,13 +28,27 @@ import {
   Save,
   ChevronRight,
   UserX,
+  Filter,
+  X,
+  Navigation,
+  Edit3,
+  MoreVertical,
 } from 'lucide-react';
 import { ClientStatusIcon, AvailabilityIcon } from '@/components/client/ClientStatusBadge';
 import Link from 'next/link';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { useUser } from '@/contexts/UserContext';
+import { cn } from '@/lib/utils';
 
 type FilterType = 'all' | 'geocoded' | 'not_geocoded' | 'active' | 'inactive';
+
+const filterConfig = {
+  all: { label: 'Tous', icon: null, color: 'default' },
+  active: { label: 'Actifs', icon: CheckCircle, color: 'success' },
+  inactive: { label: 'Inactifs', icon: UserX, color: 'secondary' },
+  geocoded: { label: 'GPS OK', icon: MapPin, color: 'info' },
+  not_geocoded: { label: 'À géolocaliser', icon: AlertCircle, color: 'warning' },
+};
 
 export default function ClientsPage() {
   return (
@@ -48,25 +62,9 @@ function ClientsContent() {
   const router = useRouter();
   const { currentUser, isAdmin } = useUser();
   const [clients, setClients] = useState<Client[]>([]);
-  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-
-  // Form state for editing
-  const [editForm, setEditForm] = useState({
-    civilite: '',
-    nom: '',
-    prenom: '',
-    adresse: '',
-    codePostal: '',
-    ville: '',
-    telDomicile: '',
-    portableM: '',
-    portableMme: '',
-  });
+  const [showFilters, setShowFilters] = useState(false);
 
   // Load clients based on user role
   useEffect(() => {
@@ -77,19 +75,24 @@ function ClientsContent() {
     }
   }, [isAdmin, currentUser]);
 
-  // Filter and search clients
-  useEffect(() => {
+  // Filtered and searched clients
+  const filteredClients = useMemo(() => {
     let result = [...clients];
 
     // Apply filter
-    if (filter === 'geocoded') {
-      result = result.filter(c => c.latitude && c.longitude);
-    } else if (filter === 'not_geocoded') {
-      result = result.filter(c => !c.latitude || !c.longitude);
-    } else if (filter === 'active') {
-      result = result.filter(c => c.status === 'active');
-    } else if (filter === 'inactive') {
-      result = result.filter(c => c.status === 'inactive');
+    switch (filter) {
+      case 'geocoded':
+        result = result.filter(c => c.latitude && c.longitude);
+        break;
+      case 'not_geocoded':
+        result = result.filter(c => !c.latitude || !c.longitude);
+        break;
+      case 'active':
+        result = result.filter(c => c.status === 'active');
+        break;
+      case 'inactive':
+        result = result.filter(c => c.status === 'inactive');
+        break;
     }
 
     // Apply search
@@ -104,406 +107,221 @@ function ClientsContent() {
       );
     }
 
-    setFilteredClients(result);
+    return result;
   }, [clients, filter, searchTerm]);
 
-  // Open edit dialog
-  const handleEdit = (client: Client) => {
-    setEditingClient(client);
-    setEditForm({
-      civilite: client.civilite,
-      nom: client.nom,
-      prenom: client.prenom,
-      adresse: client.adresse,
-      codePostal: client.codePostal,
-      ville: client.ville,
-      telDomicile: client.telDomicile || '',
-      portableM: client.portableM || '',
-      portableMme: client.portableMme || '',
-    });
-  };
-
-  // Save client changes
-  const handleSave = async () => {
-    if (!editingClient) return;
-
-    // Update client data
-    const updated = updateClient(editingClient.id, {
-      civilite: editForm.civilite,
-      nom: editForm.nom,
-      prenom: editForm.prenom,
-      adresse: editForm.adresse,
-      codePostal: editForm.codePostal,
-      ville: editForm.ville,
-      telDomicile: editForm.telDomicile || null,
-      portableM: editForm.portableM || null,
-      portableMme: editForm.portableMme || null,
-      // Reset coordinates if address changed
-      latitude: editingClient.adresse !== editForm.adresse ||
-                editingClient.codePostal !== editForm.codePostal ||
-                editingClient.ville !== editForm.ville
-        ? null : editingClient.latitude,
-      longitude: editingClient.adresse !== editForm.adresse ||
-                 editingClient.codePostal !== editForm.codePostal ||
-                 editingClient.ville !== editForm.ville
-        ? null : editingClient.longitude,
-    });
-
-    reloadClients();
-    setEditingClient(null);
-  };
-
-  // Helper to reload clients based on role
-  const reloadClients = () => {
-    if (isAdmin) {
-      setClients(getClients());
-    } else if (currentUser) {
-      setClients(getClientsByUser(currentUser.id));
-    }
-  };
-
-  // Geocode a single client
-  const handleGeocode = async (client: Client) => {
-    setIsGeocoding(true);
-    
-    const address = cleanAddress(client.adresse, client.codePostal, client.ville);
-    const result = await geocodeAddress(address);
-    
-    if (result) {
-      updateClient(client.id, {
-        latitude: result.lat,
-        longitude: result.lng,
-      });
-      reloadClients();
-    } else {
-      alert(`Impossible de géolocaliser l'adresse:\n${address}\n\nVérifiez et corrigez l'adresse.`);
-    }
-    
-    setIsGeocoding(false);
-  };
-
-  // Delete client
-  const handleDelete = (clientId: string) => {
-    deleteClient(clientId);
-    reloadClients();
-    setShowDeleteConfirm(null);
-  };
-
   // Stats
-  const geocodedCount = clients.filter(c => c.latitude && c.longitude).length;
-  const notGeocodedCount = clients.length - geocodedCount;
-  const activeCount = clients.filter(c => c.status === 'active').length;
-  const inactiveCount = clients.filter(c => c.status === 'inactive').length;
+  const stats = useMemo(() => ({
+    total: clients.length,
+    active: clients.filter(c => c.status === 'active').length,
+    inactive: clients.filter(c => c.status === 'inactive').length,
+    geocoded: clients.filter(c => c.latitude && c.longitude).length,
+    notGeocoded: clients.filter(c => !c.latitude || !c.longitude).length,
+  }), [clients]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background pb-20 lg:pb-0">
       {/* Header */}
-      <header className="bg-white border-b p-4 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
+      <header className="header-glass">
+        <div className="container-app">
+          {/* Top row */}
+          <div className="h-16 flex-between">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => router.push('/')}
+                className="flex-shrink-0"
               >
                 <ArrowLeft className="w-5 h-5" />
               </Button>
               <div>
-                <h1 className="font-semibold text-lg">Base de données clients</h1>
-                <p className="text-sm text-muted-foreground">
-                  {clients.length} clients • {activeCount} actifs • {inactiveCount} inactifs
+                <h1 className="font-semibold text-lg">Clients</h1>
+                <p className="text-xs text-muted-foreground">
+                  {filteredClients.length} sur {stats.total}
                 </p>
               </div>
             </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant={showFilters ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setShowFilters(!showFilters)}
+                className="relative"
+              >
+                <Filter className="w-5 h-5" />
+                {filter !== 'all' && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+                )}
+              </Button>
+            </div>
           </div>
 
-          {/* Search and filters */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Rechercher par nom, ville, adresse..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={filter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFilter('all')}
-              >
-                Tous ({clients.length})
-              </Button>
-              <Button
-                variant={filter === 'active' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFilter('active')}
-                className={filter === 'active' ? 'bg-green-600 hover:bg-green-700' : ''}
-              >
-                <CheckCircle className="w-4 h-4 mr-1" />
-                Actifs ({activeCount})
-              </Button>
-              <Button
-                variant={filter === 'inactive' ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={() => setFilter('inactive')}
-              >
-                <UserX className="w-4 h-4 mr-1" />
-                Inactifs ({inactiveCount})
-              </Button>
-              <Button
-                variant={filter === 'not_geocoded' ? 'destructive' : 'outline'}
-                size="sm"
-                onClick={() => setFilter('not_geocoded')}
-              >
-                <AlertCircle className="w-4 h-4 mr-1" />
-                À géolocaliser ({notGeocodedCount})
-              </Button>
-            </div>
+          {/* Search bar */}
+          <div className="pb-4">
+            <SearchInput
+              placeholder="Rechercher un client..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onClear={() => setSearchTerm('')}
+            />
           </div>
+
+          {/* Filter pills */}
+          {showFilters && (
+            <div className="pb-4 overflow-x-scroll-snap -mx-4 px-4 animate-fade-in-down">
+              <div className="flex gap-2 min-w-max">
+                {(Object.keys(filterConfig) as FilterType[]).map((key) => {
+                  const config = filterConfig[key];
+                  const Icon = config.icon;
+                  const count = key === 'all' ? stats.total :
+                               key === 'active' ? stats.active :
+                               key === 'inactive' ? stats.inactive :
+                               key === 'geocoded' ? stats.geocoded : stats.notGeocoded;
+                  
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setFilter(key)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                        "border-2 whitespace-nowrap",
+                        filter === key
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-transparent bg-muted text-muted-foreground hover:bg-muted/80"
+                      )}
+                    >
+                      {Icon && <Icon className="w-4 h-4" />}
+                      {config.label}
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded-full text-xs",
+                        filter === key ? "bg-primary text-primary-foreground" : "bg-background"
+                      )}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Client list */}
-      <main className="max-w-7xl mx-auto p-4">
+      <main className="container-app py-4">
         {filteredClients.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <User className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-medium mb-2">Aucun client trouvé</h3>
-              <p className="text-sm text-muted-foreground">
-                {searchTerm ? 'Modifiez votre recherche' : 'Importez des clients pour commencer'}
-              </p>
-            </CardContent>
-          </Card>
+          <div className="empty-state py-16">
+            <div className="empty-state-icon">
+              <User className="w-full h-full" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Aucun client trouvé</h3>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm ? 'Modifiez votre recherche' : 'Importez des clients pour commencer'}
+            </p>
+            {searchTerm && (
+              <Button variant="outline" onClick={() => setSearchTerm('')}>
+                Effacer la recherche
+              </Button>
+            )}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-3 stagger-children">
             {filteredClients.map(client => (
-              <Card 
-                key={client.id}
-                className={`cursor-pointer hover:shadow-md transition-shadow ${
-                  client.status === 'inactive' 
-                    ? 'border-gray-300 bg-gray-50 opacity-70' 
-                    : !client.latitude || !client.longitude 
-                      ? 'border-orange-300 bg-orange-50/50' 
-                      : ''
-                }`}
-              >
-                <Link href={`/clients/${client.id}`}>
-                  <CardContent className="p-4">
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className={`font-semibold ${client.status === 'inactive' ? 'text-gray-500' : ''}`}>
-                            {client.civilite} {client.nom}
-                          </h3>
-                          <ClientStatusIcon status={client.status} />
-                          <AvailabilityIcon profile={client.availabilityProfile} />
-                          {client.latitude && client.longitude ? (
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <AlertCircle className="w-4 h-4 text-orange-500" />
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">{client.prenom}</p>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    </div>
-
-                    {/* Address */}
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                        <div>
-                          <p>{client.adresse}</p>
-                          <p className="font-medium">{client.codePostal} {client.ville}</p>
-                        </div>
-                      </div>
-
-                      {/* Phone */}
-                      {(client.portableM || client.portableMme || client.telDomicile) && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-4 h-4 text-muted-foreground" />
-                          <span>
-                            {formatPhone(client.portableM || client.portableMme || client.telDomicile)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Status messages */}
-                    {client.status === 'inactive' && (
-                      <div className="mt-3 pt-3 border-t">
-                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                          <UserX className="w-3 h-3" />
-                          Client inactif
-                          {client.deactivationReason && ` - ${client.deactivationReason}`}
-                        </p>
-                      </div>
-                    )}
-                    {client.status === 'active' && (!client.latitude || !client.longitude) && (
-                      <div className="mt-3 pt-3 border-t">
-                        <p className="text-xs text-orange-600 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          Adresse à vérifier
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Link>
-              </Card>
+              <ClientCard key={client.id} client={client} />
             ))}
           </div>
         )}
       </main>
-
-      {/* Edit Dialog */}
-      <Dialog open={!!editingClient} onOpenChange={() => setEditingClient(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Modifier le client</DialogTitle>
-            <DialogDescription>
-              Corrigez les informations du client. L'adresse sera re-géolocalisée si modifiée.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-sm font-medium">Civilité</label>
-                <Input
-                  value={editForm.civilite}
-                  onChange={(e) => setEditForm({ ...editForm, civilite: e.target.value })}
-                  placeholder="M."
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-sm font-medium">Nom</label>
-                <Input
-                  value={editForm.nom}
-                  onChange={(e) => setEditForm({ ...editForm, nom: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Prénom</label>
-              <Input
-                value={editForm.prenom}
-                onChange={(e) => setEditForm({ ...editForm, prenom: e.target.value })}
-              />
-            </div>
-
-            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-              <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                Adresse (utilisée pour la géolocalisation)
-              </h4>
-              
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm font-medium">Adresse</label>
-                  <Input
-                    value={editForm.adresse}
-                    onChange={(e) => setEditForm({ ...editForm, adresse: e.target.value })}
-                    placeholder="12 rue de la République"
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-sm font-medium">Code postal</label>
-                    <Input
-                      value={editForm.codePostal}
-                      onChange={(e) => setEditForm({ ...editForm, codePostal: e.target.value })}
-                      placeholder="16000"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="text-sm font-medium">Ville</label>
-                    <Input
-                      value={editForm.ville}
-                      onChange={(e) => setEditForm({ ...editForm, ville: e.target.value })}
-                      placeholder="Angoulême"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-sm font-medium">Tél. domicile</label>
-                <Input
-                  value={editForm.telDomicile}
-                  onChange={(e) => setEditForm({ ...editForm, telDomicile: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Portable M.</label>
-                <Input
-                  value={editForm.portableM}
-                  onChange={(e) => setEditForm({ ...editForm, portableM: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Portable Mme</label>
-                <Input
-                  value={editForm.portableMme}
-                  onChange={(e) => setEditForm({ ...editForm, portableMme: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setEditingClient(null)}
-                className="flex-1"
-              >
-                Annuler
-              </Button>
-              <Button onClick={handleSave} className="flex-1">
-                <Save className="w-4 h-4 mr-2" />
-                Enregistrer
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Supprimer ce client ?</DialogTitle>
-            <DialogDescription>
-              Cette action est irréversible. Le client sera définitivement supprimé.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteConfirm(null)}
-              className="flex-1"
-            >
-              Annuler
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => showDeleteConfirm && handleDelete(showDeleteConfirm)}
-              className="flex-1"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Supprimer
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
+  );
+}
+
+// Client Card Component
+function ClientCard({ client }: { client: Client }) {
+  const isInactive = client.status === 'inactive';
+  const hasGPS = client.latitude && client.longitude;
+  
+  return (
+    <Link href={`/clients/${client.id}`}>
+      <Card 
+        variant="interactive"
+        className={cn(
+          isInactive && "opacity-60"
+        )}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-start gap-4">
+            {/* Avatar */}
+            <div className={cn(
+              "w-12 h-12 rounded-xl flex-center flex-shrink-0",
+              isInactive 
+                ? "bg-gray-100 dark:bg-gray-800" 
+                : hasGPS 
+                  ? "bg-gradient-to-br from-emerald-400 to-emerald-500" 
+                  : "bg-gradient-to-br from-amber-400 to-orange-500"
+            )}>
+              {isInactive ? (
+                <UserX className="w-5 h-5 text-gray-400" />
+              ) : hasGPS ? (
+                <CheckCircle className="w-5 h-5 text-white" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-white" />
+              )}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <h3 className={cn(
+                      "font-semibold truncate",
+                      isInactive && "text-muted-foreground"
+                    )}>
+                      {client.civilite} {client.nom}
+                    </h3>
+                    <AvailabilityIcon profile={client.availabilityProfile} />
+                  </div>
+                  <p className="text-sm text-muted-foreground">{client.prenom}</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-1" />
+              </div>
+
+              {/* Address */}
+              <div className="mt-2 flex items-start gap-2 text-sm text-muted-foreground">
+                <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span className="line-clamp-1">
+                  {client.codePostal} {client.ville}
+                </span>
+              </div>
+
+              {/* Phone & Status */}
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                {(client.portableM || client.portableMme) && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Phone className="w-3 h-3" />
+                    {formatPhone(client.portableM || client.portableMme || '')}
+                  </span>
+                )}
+                
+                {isInactive && (
+                  <Badge variant="inactive" size="sm">
+                    Inactif
+                  </Badge>
+                )}
+                
+                {!hasGPS && !isInactive && (
+                  <Badge variant="warning" size="sm">
+                    GPS manquant
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

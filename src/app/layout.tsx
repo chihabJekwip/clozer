@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/providers/Providers';
 import MobileNav from '@/components/layout/MobileNav';
+import DesktopSidebar from '@/components/layout/DesktopSidebar';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,7 +23,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#3b82f6',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#1f2937' },
+  ],
 };
 
 export default function RootLayout({
@@ -31,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
       <head>
         <link
           rel="stylesheet"
@@ -40,12 +44,20 @@ export default function RootLayout({
           crossOrigin=""
         />
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#1f2937" media="(prefers-color-scheme: dark)" />
       </head>
       <body className={`${inter.className} antialiased`}>
         <Providers>
-          <div className="min-h-screen bg-gray-50 pb-16 lg:pb-0">
+          {/* Desktop Sidebar */}
+          <DesktopSidebar />
+          
+          {/* Main Content - offset for sidebar on desktop */}
+          <div className="min-h-screen bg-background lg:pl-64">
             {children}
           </div>
+          
+          {/* Mobile Bottom Nav */}
           <MobileNav />
         </Providers>
       </body>

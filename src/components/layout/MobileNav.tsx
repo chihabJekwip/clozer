@@ -2,7 +2,8 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Home, Users, Route, User, Target, Package } from 'lucide-react';
+import { Home, Users, Route, User, Target, Bell } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface NavItem {
   href: string;
@@ -21,14 +22,18 @@ const navItems: NavItem[] = [
 export default function MobileNav() {
   const pathname = usePathname();
 
-  // Ne pas afficher si on est sur une page de tournée en cours
-  if (pathname?.startsWith('/tour/')) {
+  // Hide on tour pages and login
+  if (pathname?.startsWith('/tour/') || pathname === '/login') {
     return null;
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t dark:border-gray-800 lg:hidden safe-area-inset-bottom">
-      <div className="flex items-center justify-around h-16">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
+      {/* Background with blur */}
+      <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-800/50" />
+      
+      {/* Content */}
+      <div className="relative flex items-stretch h-16 safe-bottom">
         {navItems.map((item) => {
           const isActive = pathname === item.href || 
             (item.href !== '/' && pathname?.startsWith(item.href));
@@ -38,17 +43,27 @@ export default function MobileNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`
-                flex flex-col items-center justify-center flex-1 h-full px-2
-                transition-colors touch-manipulation haptic-light
-                ${isActive 
-                  ? 'text-blue-600 dark:text-blue-400' 
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:text-gray-900'
-                }
-              `}
+              className={cn(
+                "flex-1 flex flex-col items-center justify-center gap-0.5",
+                "transition-all duration-200 active:scale-95",
+                isActive 
+                  ? "text-primary" 
+                  : "text-muted-foreground"
+              )}
             >
-              <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.5]'}`} />
-              <span className={`text-[10px] mt-0.5 ${isActive ? 'font-semibold' : 'font-medium'}`}>
+              <div className={cn(
+                "p-1.5 rounded-xl transition-colors",
+                isActive && "bg-primary/10"
+              )}>
+                <Icon className={cn(
+                  "w-5 h-5 transition-all",
+                  isActive && "stroke-[2.5px]"
+                )} />
+              </div>
+              <span className={cn(
+                "text-[10px] font-medium",
+                isActive && "font-semibold"
+              )}>
                 {item.label}
               </span>
             </Link>
