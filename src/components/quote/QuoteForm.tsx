@@ -162,6 +162,12 @@ export default function QuoteForm({
       tva,
       totalTTC,
       signatureData,
+      // V2 fields
+      validUntil: null,
+      reminderSentAt: null,
+      rejectionReason: null,
+      followUpDate: null,
+      createdBy: null,
     };
     
     onSave(quote);

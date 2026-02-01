@@ -31,18 +31,31 @@ function toDbClient(client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): any
     tel_domicile: client.telDomicile,
     portable_m: client.portableM,
     portable_mme: client.portableMme,
+    email: client.email,
     adresse: client.adresse,
     code_postal: client.codePostal,
     ville: client.ville,
     latitude: client.latitude,
     longitude: client.longitude,
     assigned_to: client.assignedTo,
-    // V2 fields
+    // V2 Status fields
     status: client.status || 'active',
     availability_profile: client.availabilityProfile,
     deactivation_reason: client.deactivationReason,
     deactivated_at: client.deactivatedAt,
     deactivated_by: client.deactivatedBy,
+    // V2 Extended info
+    birthday: client.birthday,
+    company_name: client.companyName,
+    job_title: client.jobTitle,
+    interests: client.interests || [],
+    preferred_contact_method: client.preferredContactMethod,
+    best_contact_time: client.bestContactTime,
+    // V2 Analytics fields
+    last_visited_at: client.lastVisitedAt,
+    visit_count: client.visitCount || 0,
+    total_revenue: client.totalRevenue || 0,
+    priority_score: client.priorityScore || 50,
   };
 }
 
@@ -55,18 +68,32 @@ function fromDbClient(db: any): Client {
     telDomicile: db.tel_domicile,
     portableM: db.portable_m,
     portableMme: db.portable_mme,
+    email: db.email || null,
     adresse: db.adresse,
     codePostal: db.code_postal,
     ville: db.ville,
     latitude: db.latitude,
     longitude: db.longitude,
     assignedTo: db.assigned_to,
-    // V2 fields
+    // V2 Status fields
     status: db.status || 'active',
     availabilityProfile: db.availability_profile || null,
     deactivationReason: db.deactivation_reason || null,
     deactivatedAt: db.deactivated_at || null,
     deactivatedBy: db.deactivated_by || null,
+    // V2 Extended info
+    birthday: db.birthday || null,
+    companyName: db.company_name || null,
+    jobTitle: db.job_title || null,
+    interests: db.interests || [],
+    preferredContactMethod: db.preferred_contact_method || null,
+    bestContactTime: db.best_contact_time || null,
+    // V2 Analytics fields
+    lastVisitedAt: db.last_visited_at || null,
+    visitCount: db.visit_count || 0,
+    totalRevenue: db.total_revenue || 0,
+    priorityScore: db.priority_score || 50,
+    // Timestamps
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -78,6 +105,12 @@ function fromDbUser(db: any): User {
     name: db.name,
     email: db.email,
     role: db.role,
+    phone: db.phone || null,
+    avatarUrl: db.avatar_url || null,
+    notificationPreferences: db.notification_preferences || { email: true, push: true, sms: false },
+    theme: db.theme || 'system',
+    language: db.language || 'fr',
+    lastActiveAt: db.last_active_at || null,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -142,6 +175,12 @@ function fromDbQuote(db: any): Quote {
     tva: db.tva,
     totalTTC: db.total_ttc,
     signatureData: db.signature_data,
+    // V2 fields
+    validUntil: db.valid_until || null,
+    reminderSentAt: db.reminder_sent_at || null,
+    rejectionReason: db.rejection_reason || null,
+    followUpDate: db.follow_up_date || null,
+    createdBy: db.created_by || null,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -1111,6 +1150,12 @@ const DEFAULT_ADMIN: User = {
   name: 'Administrateur',
   email: 'admin@clozer.fr',
   role: 'admin',
+  phone: null,
+  avatarUrl: null,
+  notificationPreferences: { email: true, push: true, sms: false },
+  theme: 'system',
+  language: 'fr',
+  lastActiveAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
@@ -1155,6 +1200,12 @@ export function addUser(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Use
   const tempUser: User = {
     ...user,
     id: newId,
+    phone: user.phone || null,
+    avatarUrl: user.avatarUrl || null,
+    notificationPreferences: user.notificationPreferences || { email: true, push: true, sms: false },
+    theme: user.theme || 'system',
+    language: user.language || 'fr',
+    lastActiveAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -1167,6 +1218,11 @@ export function addUser(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Use
     name: user.name,
     email: user.email,
     role: user.role,
+    phone: user.phone || null,
+    avatar_url: user.avatarUrl || null,
+    notification_preferences: user.notificationPreferences || { email: true, push: true, sms: false },
+    theme: user.theme || 'system',
+    language: user.language || 'fr',
     created_at: now,
     updated_at: now,
   }).then(({ error }) => {

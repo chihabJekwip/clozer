@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';
+import { ClientTimeline } from '@/components/client/ClientTimeline';
 
 interface ClientVisitHistory {
   visit: Visit;
@@ -438,6 +439,9 @@ export default function ClientDetailPage() {
         </Card>
 
         {/* Visit History Card */}
+        {/* Client Timeline - Interactions History */}
+        <ClientTimeline clientId={clientId} />
+
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">

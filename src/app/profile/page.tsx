@@ -26,6 +26,9 @@ import {
   Home,
   Save,
   Navigation,
+  Palette,
+  Trophy,
+  ChevronRight,
 } from 'lucide-react';
 import {
   getCurrentUser,
@@ -36,6 +39,8 @@ import {
 } from '@/lib/storage';
 import { geocodeAddress } from '@/lib/geocoding';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { ThemeSelector } from '@/contexts/ThemeContext';
+import { GamificationWidget } from '@/components/gamification/GamificationDashboard';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -201,6 +206,13 @@ export default function ProfilePage() {
         </header>
 
         <main className="container py-6 space-y-6">
+          {/* Gamification Widget */}
+          {user && user.role === 'commercial' && (
+            <div className="cursor-pointer" onClick={() => router.push('/gamification')}>
+              <GamificationWidget />
+            </div>
+          )}
+
           {/* User info */}
           {user && (
             <Card>
@@ -228,6 +240,22 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Theme Selector */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Palette className="w-5 h-5" />
+                Apparence
+              </CardTitle>
+              <CardDescription>
+                Choisissez le thème de l'application
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ThemeSelector />
+            </CardContent>
+          </Card>
 
           {/* Addresses */}
           <Card>

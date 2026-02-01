@@ -55,6 +55,8 @@ import {
 import Link from 'next/link';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { useUser } from '@/contexts/UserContext';
+import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
+import { ThemeToggle } from '@/contexts/ThemeContext';
 
 export default function HomePage() {
   return (
@@ -368,17 +370,17 @@ function HomeContent() {
   const hasActiveTour = activeTours.some(t => t.status === 'in_progress');
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header simplifié */}
-      <header className="bg-white border-b p-4 sticky top-0 z-10">
+      <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center">
               <Route className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Clozer</h1>
-              <p className="text-xs text-gray-500 flex items-center gap-1">
+              <h1 className="text-lg font-bold text-gray-900 dark:text-white">Clozer</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                 {isAdmin ? (
                   <>
                     <Shield className="w-3 h-3" />
@@ -395,17 +397,19 @@ function HomeContent() {
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden md:flex items-center gap-2 text-sm text-gray-500 mr-2">
-              <span className="px-2 py-1 bg-blue-50 rounded-full text-blue-700 text-xs font-medium">
+              <span className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-700 dark:text-blue-300 text-xs font-medium">
                 {clients.length} clients
               </span>
-              <span className="px-2 py-1 bg-green-50 rounded-full text-green-700 text-xs font-medium">
+              <span className="px-2 py-1 bg-green-50 dark:bg-green-900/30 rounded-full text-green-700 dark:text-green-300 text-xs font-medium">
                 {geocodedCount} GPS
               </span>
             </div>
+            <ThemeToggle />
+            <NotificationsPanel />
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               onClick={handleLogout}
               title="Déconnexion"
             >
@@ -449,26 +453,26 @@ function HomeContent() {
           <div className="lg:col-span-1 space-y-4">
             {/* Stats rapides - Design épuré mobile */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white rounded-xl p-4 shadow-sm border">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <Users className="w-5 h-5 text-blue-600" />
+                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center">
+                    <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-gray-900">{clients.length}</div>
-                    <div className="text-xs text-gray-500">Clients</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{clients.length}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Clients</div>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl p-4 shadow-sm border">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border dark:border-gray-700">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                    <MapPin className="w-5 h-5 text-green-600" />
+                  <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center">
+                    <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-gray-900">{geocodedCount}</div>
-                    <div className="text-xs text-gray-500">Géolocalisés</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{geocodedCount}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Géolocalisés</div>
                   </div>
                 </div>
               </div>

@@ -67,7 +67,12 @@ function AdminUsersContent() {
     if (!formData.name || !formData.email) return;
 
     if (isCreating) {
-      addUser(formData);
+      addUser({
+        ...formData,
+        notificationPreferences: { email: true, push: true, sms: false },
+        theme: 'system',
+        language: 'fr',
+      });
     } else if (editingUser) {
       updateUser(editingUser.id, formData);
     }

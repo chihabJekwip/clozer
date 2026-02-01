@@ -149,3 +149,181 @@ select {
   background: transparent;
   border: none;
 }
+
+/* Haptic feedback simulation (visual) */
+.haptic-light {
+  transition: transform 0.1s ease;
+}
+
+.haptic-light:active {
+  transform: scale(0.98);
+}
+
+.haptic-medium {
+  transition: transform 0.1s ease;
+}
+
+.haptic-medium:active {
+  transform: scale(0.95);
+}
+
+.haptic-heavy {
+  transition: transform 0.15s ease;
+}
+
+.haptic-heavy:active {
+  transform: scale(0.92);
+}
+
+/* Swipeable card animations */
+@keyframes swipeLeft {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes swipeRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.swipe-left {
+  animation: swipeLeft 0.3s ease-out forwards;
+}
+
+.swipe-right {
+  animation: swipeRight 0.3s ease-out forwards;
+}
+
+/* Pull to refresh animation */
+@keyframes pullRefresh {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.pull-refresh-spinner {
+  animation: pullRefresh 1s linear infinite;
+}
+
+/* Dark mode specific adjustments */
+.dark .leaflet-container {
+  filter: brightness(0.85) saturate(1.1);
+}
+
+.dark .leaflet-popup-content-wrapper {
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+}
+
+.dark .leaflet-popup-tip {
+  background: hsl(var(--card));
+}
+
+/* Gradient backgrounds */
+.gradient-primary {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.8) 100%);
+}
+
+.gradient-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.gradient-warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.gradient-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.dark .glass {
+  background: rgba(17, 24, 39, 0.8);
+}
+
+/* Bounce animation for notifications */
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-bounce-subtle {
+  animation: bounce 2s ease-in-out infinite;
+}
+
+/* Pulse ring for notifications */
+@keyframes pulseRing {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: pulseRing 1.5s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Better focus states for accessibility */
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
