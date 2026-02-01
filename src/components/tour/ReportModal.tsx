@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Client, VisitReport } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,11 +13,47 @@ import {
 } from '@/components/ui/dialog';
 import {
   Mic,
+  MicOff,
   Save,
   X,
   FileText,
   AlertCircle,
 } from 'lucide-react';
+
+// Type definitions for Web Speech API
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message?: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  onstart: (() => void) | null;
+}
+
+interface SpeechRecognitionConstructor {
+  new(): SpeechRecognition;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
 
 interface ReportModalProps {
   open: boolean;
@@ -38,15 +74,112 @@ export default function ReportModal({
 }: ReportModalProps) {
   const [reportContent, setReportContent] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Initialiser avec le rapport existant si édition
+  // Check if speech recognition is supported
   useEffect(() => {
-    if (existingReport) {
-      setReportContent(existingReport.content);
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    setSpeechSupported(!!SpeechRecognition);
+  }, []);
+
+  // Initialize speech recognition
+  const initRecognition = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'fr-FR';
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = '';
+      let interimTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        setReportContent(prev => prev + finalTranscript);
+        setError(null);
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('Speech recognition error:', event.error);
+      setIsRecording(false);
+      
+      if (event.error === 'not-allowed') {
+        setError('Microphone non autorisé. Vérifiez les permissions de votre navigateur.');
+      } else if (event.error === 'no-speech') {
+        // Silent - no speech detected, this is normal
+      } else {
+        setError(`Erreur de reconnaissance vocale: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    return recognition;
+  }, []);
+
+  // Toggle recording
+  const toggleRecording = () => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
     } else {
-      setReportContent('');
+      if (!recognitionRef.current) {
+        recognitionRef.current = initRecognition();
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          // Recognition might already be running
+          recognitionRef.current.stop();
+          recognitionRef.current = initRecognition();
+          recognitionRef.current?.start();
+        }
+      }
     }
-    setError(null);
+  };
+
+  // Cleanup on unmount or close
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  // Reset state when modal opens/closes
+  useEffect(() => {
+    if (open) {
+      if (existingReport) {
+        setReportContent(existingReport.content);
+      } else {
+        setReportContent('');
+      }
+      setError(null);
+      setIsRecording(false);
+    } else {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+    }
   }, [existingReport, open]);
 
   const handleSave = () => {
@@ -57,23 +190,22 @@ export default function ReportModal({
       return;
     }
 
+    recognitionRef.current?.stop();
     onSaveReport(trimmedContent);
     setReportContent('');
     setError(null);
   };
 
-  const handleClose = () => {
-    // Si c'est une édition, on peut fermer sans sauvegarder
-    if (existingReport) {
-      onClose();
-      return;
-    }
-    // Sinon, on ne peut pas fermer sans rapport
-    setError('Vous devez saisir un rapport pour terminer la visite.');
+  // Allow closing without saving - this will NOT complete the visit
+  const handleCancel = () => {
+    recognitionRef.current?.stop();
+    setReportContent('');
+    setError(null);
+    onClose();
   };
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleCancel()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -86,18 +218,38 @@ export default function ReportModal({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Indication pour la dictée vocale */}
-          <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-            <Mic className="w-5 h-5 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">Astuce : Dictée vocale</p>
-              <p className="text-blue-600">
-                Touchez le champ ci-dessous, puis appuyez sur l'icône 
-                <span className="inline-block mx-1 text-lg">🎤</span> 
-                de votre clavier pour dicter votre rapport.
-              </p>
+          {/* Bouton de dictée vocale */}
+          {speechSupported && (
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant={isRecording ? 'destructive' : 'outline'}
+                size="lg"
+                className={`flex-1 h-14 ${isRecording ? 'animate-pulse' : ''}`}
+                onClick={toggleRecording}
+              >
+                {isRecording ? (
+                  <>
+                    <MicOff className="w-6 h-6 mr-2" />
+                    Arrêter l'enregistrement
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-6 h-6 mr-2" />
+                    Dicter le rapport
+                  </>
+                )}
+              </Button>
             </div>
-          </div>
+          )}
+
+          {/* Recording indicator */}
+          {isRecording && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-sm text-red-700 animate-pulse">
+              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+              <p>Enregistrement en cours... Parlez clairement.</p>
+            </div>
+          )}
 
           {/* Zone de texte pour le rapport */}
           <div>
@@ -134,30 +286,28 @@ export default function ReportModal({
 
           {/* Boutons d'action */}
           <div className="flex gap-2 pt-2">
-            {existingReport && (
-              <Button
-                variant="outline"
-                onClick={onClose}
-                className="flex-1"
-              >
-                <X className="w-4 h-4 mr-2" />
-                Annuler
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              className="flex-1"
+            >
+              <X className="w-4 h-4 mr-2" />
+              {existingReport ? 'Annuler' : 'Fermer'}
+            </Button>
             <Button
               onClick={handleSave}
               className="flex-1"
               disabled={!reportContent.trim()}
             >
               <Save className="w-4 h-4 mr-2" />
-              {existingReport ? 'Enregistrer les modifications' : 'Valider et terminer la visite'}
+              {existingReport ? 'Enregistrer' : 'Valider la visite'}
             </Button>
           </div>
 
-          {/* Message obligatoire */}
+          {/* Message informatif */}
           {!existingReport && (
             <p className="text-xs text-center text-muted-foreground">
-              Le rapport est obligatoire pour terminer la visite.
+              Fermer sans valider annulera la complétion de cette visite.
             </p>
           )}
         </div>

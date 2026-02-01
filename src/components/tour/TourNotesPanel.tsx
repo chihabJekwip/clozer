@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { TourNote } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,6 +15,7 @@ import {
   FileText,
   Plus,
   Mic,
+  MicOff,
   Edit2,
   Trash2,
   Save,
@@ -22,6 +23,40 @@ import {
   Clock,
 } from 'lucide-react';
 import { getTourNotes, addTourNote, updateTourNote, deleteTourNote } from '@/lib/storage';
+
+// Type definitions for Web Speech API
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  onstart: (() => void) | null;
+}
+
+interface SpeechRecognitionConstructor {
+  new(): SpeechRecognition;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
 
 interface TourNotesPanelProps {
   open: boolean;
@@ -41,6 +76,96 @@ export default function TourNotesPanel({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Check if speech recognition is supported
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    setSpeechSupported(!!SpeechRecognition);
+  }, []);
+
+  // Initialize speech recognition
+  const initRecognition = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'fr-FR';
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+      setSpeechError(null);
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        }
+      }
+
+      if (finalTranscript) {
+        setNewNoteContent(prev => prev + finalTranscript);
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('Speech recognition error:', event.error);
+      setIsRecording(false);
+      
+      if (event.error === 'not-allowed') {
+        setSpeechError('Microphone non autorisé. Vérifiez les permissions.');
+      } else if (event.error !== 'no-speech') {
+        setSpeechError(`Erreur: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    return recognition;
+  }, []);
+
+  // Toggle recording
+  const toggleRecording = () => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+    } else {
+      if (!recognitionRef.current) {
+        recognitionRef.current = initRecognition();
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          recognitionRef.current.stop();
+          recognitionRef.current = initRecognition();
+          recognitionRef.current?.start();
+        }
+      }
+    }
+  };
+
+  // Cleanup on unmount or close
+  useEffect(() => {
+    if (!open) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+    }
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, [open]);
 
   // Load notes when panel opens
   useEffect(() => {
@@ -191,15 +316,43 @@ export default function TourNotesPanel({
 
           {/* Add new note */}
           <div className="border-t pt-4 space-y-3">
-            <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-              <Mic className="w-5 h-5 mt-0.5 shrink-0" />
-              <div>
-                <p className="font-medium">Astuce : Dictée vocale</p>
-                <p className="text-blue-600">
-                  Appuyez sur l'icône micro de votre clavier pour dicter.
-                </p>
+            {/* Bouton de dictée vocale */}
+            {speechSupported && (
+              <Button
+                type="button"
+                variant={isRecording ? 'destructive' : 'outline'}
+                size="lg"
+                className={`w-full h-12 ${isRecording ? 'animate-pulse' : ''}`}
+                onClick={toggleRecording}
+              >
+                {isRecording ? (
+                  <>
+                    <MicOff className="w-5 h-5 mr-2" />
+                    Arrêter l'enregistrement
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-5 h-5 mr-2" />
+                    Dicter une note
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Recording indicator */}
+            {isRecording && (
+              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg text-sm text-red-700 animate-pulse">
+                <div className="w-2 h-2 bg-red-500 rounded-full" />
+                <p>Enregistrement... Parlez clairement.</p>
               </div>
-            </div>
+            )}
+
+            {/* Speech error */}
+            {speechError && (
+              <div className="p-2 bg-amber-50 rounded-lg text-sm text-amber-700">
+                {speechError}
+              </div>
+            )}
             
             <div className="flex gap-2">
               <Textarea
