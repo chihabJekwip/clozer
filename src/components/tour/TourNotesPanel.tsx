@@ -52,6 +52,7 @@ export default function TourNotesPanel({
   const [speechSupported, setSpeechSupported] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const lastProcessedIndex = useRef<number>(-1);
 
   // Check if speech recognition is supported
   useEffect(() => {
@@ -74,17 +75,20 @@ export default function TourNotesPanel({
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = '';
-
+      // Only process new final results to avoid duplicates
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' ';
+        // Skip if we've already processed this result or if it's not final
+        if (i <= lastProcessedIndex.current || !event.results[i].isFinal) {
+          continue;
         }
-      }
-
-      if (finalTranscript) {
-        setNewNoteContent(prev => prev + finalTranscript);
+        
+        const transcript = event.results[i][0].transcript;
+        lastProcessedIndex.current = i;
+        
+        setNewNoteContent(prev => {
+          const needsSpace = prev.length > 0 && !prev.endsWith(' ');
+          return prev + (needsSpace ? ' ' : '') + transcript;
+        });
       }
     };
 
@@ -112,6 +116,9 @@ export default function TourNotesPanel({
       recognitionRef.current?.stop();
       setIsRecording(false);
     } else {
+      // Reset the processed index when starting new recording
+      lastProcessedIndex.current = -1;
+      
       if (!recognitionRef.current) {
         recognitionRef.current = initRecognition();
       }

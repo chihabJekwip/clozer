@@ -235,6 +235,136 @@ export default function TourPage() {
     }
   };
 
+  // Ré-optimiser à partir de la position actuelle du commercial
+  const handleOptimizeFromCurrentLocation = async () => {
+    if (!tour || clients.length === 0) return;
+
+    setIsOptimizing(true);
+
+    try {
+      // Obtenir la position GPS actuelle
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error('Géolocalisation non supportée'));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+
+      const currentLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+
+      // Filtrer uniquement les visites pending (pas encore faites)
+      const pendingVisits = visits.filter(v => v.status === 'pending');
+      
+      if (pendingVisits.length === 0) {
+        alert('Toutes les visites ont été effectuées !');
+        setIsOptimizing(false);
+        return;
+      }
+
+      // Récupérer les clients correspondants
+      const pendingClients = pendingVisits
+        .map(v => clients.find(c => c.id === v.clientId))
+        .filter((c): c is Client => !!c && !!c.latitude && !!c.longitude);
+
+      if (pendingClients.length === 0) {
+        setIsOptimizing(false);
+        return;
+      }
+
+      // Créer les points pour l'optimisation
+      const points = pendingClients.map(c => ({
+        lat: c.latitude!,
+        lng: c.longitude!,
+      }));
+
+      // Utiliser la position actuelle comme point de départ
+      const allPoints = [currentLocation, ...points];
+
+      // Obtenir la matrice des distances
+      const matrix = await getDistanceMatrix(allPoints);
+
+      // Optimiser avec la position actuelle comme départ
+      const result = optimizeTour(currentLocation, points, matrix?.distances);
+
+      // Réorganiser les visites pending selon l'ordre optimal
+      const optimizedPendingVisitIds = result.orderedIndices.map(i => {
+        const client = pendingClients[i];
+        const visit = pendingVisits.find(v => v.clientId === client.id);
+        return visit?.id;
+      }).filter((id): id is string => !!id);
+
+      // Garder les visites déjà complétées en premier, puis ajouter les pending optimisées
+      const completedVisitIds = visits
+        .filter(v => v.status !== 'pending')
+        .map(v => v.id);
+      
+      const newOrder = [...completedVisitIds, ...optimizedPendingVisitIds];
+      updateVisitsOrder(tourId, newOrder);
+
+      // Calculer le nouvel itinéraire
+      const orderedPoints = [
+        currentLocation,
+        ...result.orderedIndices.map(i => ({
+          lat: pendingClients[i].latitude!,
+          lng: pendingClients[i].longitude!,
+        })),
+        tour.startPoint, // Retour au bureau
+      ];
+
+      const routeResult = await getFullRoute(orderedPoints);
+
+      if (routeResult) {
+        setRouteGeometry(routeResult.fullGeometry);
+
+        // Mettre à jour les distances pour les visites pending
+        const updatedVisits = getVisitsByTour(tourId);
+        const updatedPendingVisits = updatedVisits.filter(v => v.status === 'pending');
+        
+        routeResult.segments.forEach((segment, i) => {
+          if (i < updatedPendingVisits.length) {
+            updateVisit(updatedPendingVisits[i].id, {
+              distanceFromPrevious: segment.distance,
+              durationFromPrevious: segment.duration,
+            });
+          }
+        });
+
+        // Mettre à jour le tour avec les nouveaux totaux
+        updateTour(tourId, {
+          totalDistance: routeResult.totalDistance,
+          totalDuration: routeResult.totalDuration,
+        });
+      }
+
+      // Recharger les données
+      setTour(getTour(tourId) || null);
+      setVisits(getVisitsByTour(tourId));
+      
+      alert('✓ Itinéraire ré-optimisé depuis votre position actuelle !');
+    } catch (error: any) {
+      console.error('Erreur lors de la ré-optimisation:', error);
+      if (error.code === 1) {
+        alert('Erreur : Accès à la géolocalisation refusé. Veuillez autoriser l\'accès.');
+      } else if (error.code === 2) {
+        alert('Erreur : Position indisponible. Vérifiez votre GPS.');
+      } else if (error.code === 3) {
+        alert('Erreur : Délai dépassé pour obtenir la position.');
+      } else {
+        alert('Erreur lors de la ré-optimisation : ' + error.message);
+      }
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
   // Ouvrir le modal de rapport avant de terminer la visite
   const handleMarkCompleted = (visitId: string) => {
     const visit = visits.find(v => v.id === visitId);
@@ -447,6 +577,7 @@ export default function TourPage() {
           onExitTourMode={() => setIsTourMode(false)}
           onEndTour={handleRequestEndTour}
           onOptimize={handleOptimize}
+          onOptimizeFromCurrentLocation={handleOptimizeFromCurrentLocation}
           onSelectVisit={setCurrentVisitIndex}
           isOptimizing={isOptimizing}
           completedCount={completedCount}

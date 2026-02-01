@@ -42,6 +42,7 @@ interface TourModeLayoutProps {
   onExitTourMode: () => void;
   onEndTour: () => void;
   onOptimize: () => void;
+  onOptimizeFromCurrentLocation?: () => void; // Re-optimize from user's current GPS position
   onSelectVisit: (index: number) => void;
   mapComponent: ReactNode;
   isOptimizing: boolean;
@@ -62,6 +63,7 @@ export default function TourModeLayout({
   onExitTourMode,
   onEndTour,
   onOptimize,
+  onOptimizeFromCurrentLocation,
   onSelectVisit,
   mapComponent,
   isOptimizing,
@@ -140,6 +142,29 @@ export default function TourModeLayout({
         {activeTab === 'map' && (
           <div className="h-full relative">
             {mapComponent}
+            
+            {/* Floating Re-optimize Button */}
+            <div className="absolute top-4 right-4 z-10">
+              <Button
+                variant="outline"
+                size="lg"
+                className={`bg-white/95 shadow-lg h-12 px-4 ${isOptimizing ? 'animate-pulse' : ''}`}
+                onClick={onOptimizeFromCurrentLocation || onOptimize}
+                disabled={isOptimizing}
+              >
+                {isOptimizing ? (
+                  <>
+                    <RotateCcw className="w-5 h-5 mr-2 animate-spin" />
+                    Optimisation...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-5 h-5 mr-2" />
+                    Ré-optimiser
+                  </>
+                )}
+              </Button>
+            </div>
             
             {/* Current Client Overlay */}
             {currentClient && currentVisit?.status === 'pending' && (

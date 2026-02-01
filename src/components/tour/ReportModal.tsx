@@ -48,6 +48,7 @@ export default function ReportModal({
   const [isRecording, setIsRecording] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const lastProcessedIndex = useRef<number>(-1);
 
   // Check if speech recognition is supported
   useEffect(() => {
@@ -69,20 +70,21 @@ export default function ReportModal({
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
-
+      // Only process new final results to avoid duplicates
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' ';
-        } else {
-          interimTranscript += transcript;
+        // Skip if we've already processed this result or if it's not final
+        if (i <= lastProcessedIndex.current || !event.results[i].isFinal) {
+          continue;
         }
-      }
-
-      if (finalTranscript) {
-        setReportContent(prev => prev + finalTranscript);
+        
+        const transcript = event.results[i][0].transcript;
+        lastProcessedIndex.current = i;
+        
+        setReportContent(prev => {
+          // Add space only if there's existing content and it doesn't end with space
+          const needsSpace = prev.length > 0 && !prev.endsWith(' ');
+          return prev + (needsSpace ? ' ' : '') + transcript;
+        });
         setError(null);
       }
     };
@@ -113,6 +115,9 @@ export default function ReportModal({
       recognitionRef.current?.stop();
       setIsRecording(false);
     } else {
+      // Reset the processed index when starting new recording
+      lastProcessedIndex.current = -1;
+      
       if (!recognitionRef.current) {
         recognitionRef.current = initRecognition();
       }
