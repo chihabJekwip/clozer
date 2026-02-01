@@ -103,7 +103,7 @@ export default function ImportAssignmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-visible">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="w-5 h-5" />
@@ -114,7 +114,7 @@ export default function ImportAssignmentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-4 py-4">
+        <div className="flex-1 overflow-y-auto overflow-x-visible space-y-4 py-4">
           {/* Summary */}
           <div className="p-3 bg-muted/50 rounded-lg text-sm space-y-1">
             <div className="flex justify-between">

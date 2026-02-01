@@ -722,23 +722,21 @@ export default function TourPage() {
       {/* Boutons flottants - Mobile */}
       <div className="fixed bottom-20 right-4 z-20 flex flex-col gap-3 lg:hidden">
         {/* Bouton Notes - Style visible */}
-        <Button
-          size="lg"
-          className="rounded-full shadow-xl h-14 w-14 bg-blue-600 hover:bg-blue-700 border-2 border-blue-400"
+        <button
+          className="rounded-full shadow-xl h-16 w-16 bg-blue-600 hover:bg-blue-700 border-2 border-blue-400 flex items-center justify-center active:scale-95 transition-transform"
           onClick={() => setShowNotesPanel(true)}
         >
-          <StickyNote className="w-6 h-6 text-white" />
-        </Button>
+          <StickyNote className="w-8 h-8 text-white" strokeWidth={2.5} />
+        </button>
         
         {/* Bouton Navigation - Style visible */}
         {currentClient && currentClient.latitude && currentClient.longitude && viewMode !== 'list' && (
-          <Button
-            size="lg"
-            className="rounded-full shadow-xl h-14 w-14 bg-green-600 hover:bg-green-700 border-2 border-green-400"
+          <button
+            className="rounded-full shadow-xl h-16 w-16 bg-green-600 hover:bg-green-700 border-2 border-green-400 flex items-center justify-center active:scale-95 transition-transform"
             onClick={() => handleNavigate(currentClient)}
           >
-            <Navigation className="w-6 h-6 text-white" />
-          </Button>
+            <Navigation className="w-8 h-8 text-white" strokeWidth={2.5} />
+          </button>
         )}
       </div>
       

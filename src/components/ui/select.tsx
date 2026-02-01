@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { ChevronDown } from "lucide-react"
 
@@ -9,6 +10,7 @@ interface SelectContextValue {
   onValueChange: (value: string) => void
   open: boolean
   setOpen: (open: boolean) => void
+  triggerRef: React.RefObject<HTMLButtonElement>
 }
 
 const SelectContext = React.createContext<SelectContextValue | undefined>(undefined)
@@ -23,6 +25,7 @@ interface SelectProps {
 const Select = ({ value, defaultValue, onValueChange, children }: SelectProps) => {
   const [internalValue, setInternalValue] = React.useState(defaultValue || "")
   const [open, setOpen] = React.useState(false)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
   
   const actualValue = value !== undefined ? value : internalValue
   const handleValueChange = (newValue: string) => {
@@ -34,7 +37,7 @@ const Select = ({ value, defaultValue, onValueChange, children }: SelectProps) =
   }
 
   return (
-    <SelectContext.Provider value={{ value: actualValue, onValueChange: handleValueChange, open, setOpen }}>
+    <SelectContext.Provider value={{ value: actualValue, onValueChange: handleValueChange, open, setOpen, triggerRef }}>
       <div className="relative">
         {children}
       </div>
@@ -49,9 +52,16 @@ const SelectTrigger = React.forwardRef<
   const context = React.useContext(SelectContext)
   if (!context) throw new Error("SelectTrigger must be used within Select")
 
+  // Combine refs
+  const combinedRef = (node: HTMLButtonElement) => {
+    if (typeof ref === 'function') ref(node)
+    else if (ref) ref.current = node
+    if (context.triggerRef) (context.triggerRef as React.MutableRefObject<HTMLButtonElement | null>).current = node
+  }
+
   return (
     <button
-      ref={ref}
+      ref={combinedRef}
       type="button"
       onClick={() => context.setOpen(!context.open)}
       className={cn(
@@ -81,23 +91,48 @@ const SelectContent = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, children, ...props }, ref) => {
   const context = React.useContext(SelectContext)
+  const [position, setPosition] = React.useState({ top: 0, left: 0, width: 0 })
+  const [mounted, setMounted] = React.useState(false)
+  
   if (!context) throw new Error("SelectContent must be used within Select")
 
-  if (!context.open) return null
+  React.useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
 
-  return (
+  React.useEffect(() => {
+    if (context.open && context.triggerRef.current) {
+      const rect = context.triggerRef.current.getBoundingClientRect()
+      setPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      })
+    }
+  }, [context.open, context.triggerRef])
+
+  if (!context.open || !mounted) return null
+
+  const content = (
     <>
       <div 
-        className="fixed inset-0 z-40" 
+        className="fixed inset-0 z-[9998]" 
         onClick={() => context.setOpen(false)}
       />
       <div
         ref={ref}
         className={cn(
-          "absolute z-[100] min-w-[8rem] w-full mt-1 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg",
+          "fixed z-[9999] min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-xl",
           "animate-in fade-in-0 zoom-in-95",
+          "max-h-60 overflow-y-auto",
           className
         )}
+        style={{ 
+          top: position.top,
+          left: position.left,
+          width: position.width,
+        }}
         {...props}
       >
         <div className="p-1">
@@ -106,6 +141,8 @@ const SelectContent = React.forwardRef<
       </div>
     </>
   )
+
+  return createPortal(content, document.body)
 })
 SelectContent.displayName = "SelectContent"
 
