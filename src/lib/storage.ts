@@ -495,10 +495,11 @@ export async function importClientsAsync(newClients: Omit<Client, 'id' | 'create
 }
 
 export function importClients(newClients: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>[]): Client[] {
-  // Create temp clients with IDs
+  // Create temp clients with IDs - ensure status is set to 'active' by default
   const tempClients: Client[] = newClients.map(c => ({
     ...c,
     id: generateId(),
+    status: c.status || 'active', // Default to active for new clients
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }));
@@ -801,6 +802,39 @@ export function deleteTour(id: string): boolean {
 
 export function getToursByUser(userId: string): Tour[] {
   return toursCache.filter(t => t.userId === userId);
+}
+
+// Get active tours (planning or in_progress) that include a specific client
+export function getActiveToursForClient(clientId: string): Tour[] {
+  const activeTours = toursCache.filter(t => 
+    t.status === 'planning' || t.status === 'in_progress'
+  );
+  
+  // Find tours where the client has a visit
+  const clientVisits = visitsCache.filter(v => v.clientId === clientId);
+  const tourIdsWithClient = new Set(clientVisits.map(v => v.tourId));
+  
+  return activeTours.filter(t => tourIdsWithClient.has(t.id));
+}
+
+// Get a map of clientId -> active tour names for quick lookup
+export function getClientToursMap(): Map<string, string[]> {
+  const activeTours = toursCache.filter(t => 
+    t.status === 'planning' || t.status === 'in_progress'
+  );
+  
+  const clientToursMap = new Map<string, string[]>();
+  
+  activeTours.forEach(tour => {
+    const tourVisits = visitsCache.filter(v => v.tourId === tour.id);
+    tourVisits.forEach(visit => {
+      const existing = clientToursMap.get(visit.clientId) || [];
+      existing.push(tour.name);
+      clientToursMap.set(visit.clientId, existing);
+    });
+  });
+  
+  return clientToursMap;
 }
 
 // ==================== VISITS ====================

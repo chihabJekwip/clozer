@@ -160,6 +160,8 @@ export function parseExcelFile(file: ArrayBuffer): ImportResult {
         longitude: null,
         assignedTo: null,
         commercialName: undefined,
+        status: 'active', // Default status for new clients
+        availabilityProfile: null,
       };
 
       columnMapping.forEach((field, colIndex) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Client, Tour, AppSettings } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, StatCard, ListItemCard } from '@/components/ui/card';
@@ -28,6 +28,7 @@ import {
   clearAllData,
   getClientsByUser,
   getToursByUser,
+  getClientToursMap,
 } from '@/lib/storage';
 import { parseExcelFile, readExcelFile, matchCommercialsToUsers, ImportedClient } from '@/lib/excel-import';
 import ImportAssignmentDialog from '@/components/import/ImportAssignmentDialog';
@@ -366,6 +367,9 @@ function HomeContent() {
   const activeTours = tours.filter(t => t.status === 'in_progress' || t.status === 'planning');
   const hasActiveTour = activeTours.some(t => t.status === 'in_progress');
   const activeTour = activeTours.find(t => t.status === 'in_progress');
+
+  // Map of client ID -> tour names (for showing which clients are already in tours)
+  const clientToursMap = useMemo(() => getClientToursMap(), [tours, refreshKey]);
 
   // Loading State
   if (isLoading) {
@@ -824,26 +828,37 @@ function HomeContent() {
               </div>
 
               <div className="border rounded-xl max-h-60 overflow-y-auto divide-y">
-                {clients.filter(c => c.latitude && c.longitude).map(client => (
-                  <div
-                    key={client.id}
-                    className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${
-                      selectedClients.has(client.id) ? 'bg-primary/10' : 'hover:bg-muted'
-                    }`}
-                    onClick={() => toggleClientSelection(client.id)}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedClients.has(client.id)}
-                      onChange={() => {}}
-                      className="rounded"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{client.nom} {client.prenom}</p>
-                      <p className="text-xs text-muted-foreground truncate">{client.ville}</p>
+                {clients.filter(c => c.latitude && c.longitude).map(client => {
+                  const clientTours = clientToursMap.get(client.id);
+                  const isInTour = clientTours && clientTours.length > 0;
+                  return (
+                    <div
+                      key={client.id}
+                      className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${
+                        selectedClients.has(client.id) ? 'bg-primary/10' : 'hover:bg-muted'
+                      } ${isInTour ? 'border-l-2 border-l-warning' : ''}`}
+                      onClick={() => toggleClientSelection(client.id)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedClients.has(client.id)}
+                        onChange={() => {}}
+                        className="rounded"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm truncate">{client.nom} {client.prenom}</p>
+                          {isInTour && (
+                            <Badge variant="warning" className="text-xs shrink-0">
+                              {clientTours.length === 1 ? clientTours[0] : `${clientTours.length} tournées`}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{client.ville}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

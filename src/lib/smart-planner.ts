@@ -98,11 +98,12 @@ export function getUnvisitedClients(userId?: string): Client[] {
   });
   
   // Retourner les clients non visités, actifs, avec coordonnées GPS (pour les tournées)
+  // Note: status undefined est traité comme 'active' pour la rétro-compatibilité
   return allClients.filter(client => 
     !visitedClientIds.has(client.id) && 
     client.latitude !== null && 
     client.longitude !== null &&
-    client.status === 'active' // V2: Exclure les clients inactifs
+    (client.status === 'active' || client.status === undefined || client.status === null) // V2: Exclure seulement les clients explicitement inactifs
   );
 }
 
@@ -416,7 +417,8 @@ export function getInsights(userId?: string): {
   const visitedClientIds = getVisitedClientIds();
   
   // V2: Count active and inactive clients
-  const activeClients = allClients.filter(c => c.status === 'active');
+  // Note: status undefined/null is treated as 'active' for backwards compatibility
+  const activeClients = allClients.filter(c => c.status === 'active' || c.status === undefined || c.status === null);
   const inactiveClients = allClients.filter(c => c.status === 'inactive').length;
   
   // Compter les vrais visités (clients avec une visite completed) - seulement actifs
