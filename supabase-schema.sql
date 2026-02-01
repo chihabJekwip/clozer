@@ -1,5 +1,5 @@
 -- Clozer Database Schema for Supabase
--- Run this in Supabase SQL Editor (https://supabase.com/dashboard/project/loxrbavxiwraisbzbtat/sql)
+-- Run this in Supabase SQL Editor (https://supabase.com/dashboard/project/taidftykhdppjhtvqvfl/sql)
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
