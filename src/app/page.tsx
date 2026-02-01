@@ -183,9 +183,11 @@ function HomeContent() {
     alert(`✅ ${imported.length} clients importés avec succès !`);
   };
 
-  // Géocoder les clients
+  // Géocoder les clients (admins: tous, commerciaux: leurs clients uniquement)
   const geocodeClients = async () => {
-    const clientsToGeocode = allClients.filter(c => !c.latitude || !c.longitude);
+    // Pour les commerciaux, géocoder seulement leurs clients assignés
+    const clientsSource = isAdmin ? allClients : clients;
+    const clientsToGeocode = clientsSource.filter(c => !c.latitude || !c.longitude);
     if (clientsToGeocode.length === 0) return;
 
     setIsGeocoding(true);
@@ -518,8 +520,8 @@ function HomeContent() {
                   Nouvelle tournée
                 </Button>
 
-                {/* Geocode if needed */}
-                {allClients.length > allGeocodedCount && isAdmin && (
+                {/* Geocode if needed - available for both admins and commercials */}
+                {(isAdmin ? allClients.length > allGeocodedCount : clients.length > geocodedCount) && (
                   <Button
                     variant="subtle-warning"
                     className="w-full h-12 justify-start"
@@ -534,7 +536,7 @@ function HomeContent() {
                     ) : (
                       <>
                         <MapPin className="w-5 h-5 mr-3" />
-                        Géolocaliser ({allClients.length - allGeocodedCount})
+                        Géolocaliser ({isAdmin ? allClients.length - allGeocodedCount : clients.length - geocodedCount})
                       </>
                     )}
                   </Button>
