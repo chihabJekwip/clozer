@@ -13,7 +13,6 @@ import {
   User, 
   Target, 
   BarChart3, 
-  Settings,
   LogOut,
   Shield,
   UserPlus,
@@ -50,10 +49,10 @@ const adminNavItems: NavItem[] = [
 
 export default function DesktopSidebar() {
   const pathname = usePathname();
-  const { currentUser, isAdmin, logout } = useUser();
+  const { currentUser, isAdmin, logout, isLoading } = useUser();
 
-  // Hide on tour pages and login
-  if (pathname?.startsWith('/tour/') || pathname === '/login') {
+  // Hide on tour pages, login, and while loading
+  if (pathname?.startsWith('/tour/') || pathname === '/login' || isLoading) {
     return null;
   }
 
@@ -133,17 +132,19 @@ export default function DesktopSidebar() {
       {/* Footer */}
       <div className="p-3 border-t space-y-2">
         {/* User Info */}
-        <Link href="/profile">
-          <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 flex-center">
-              <User className="w-5 h-5 text-muted-foreground" />
+        {currentUser && (
+          <Link href="/profile">
+            <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 flex-center">
+                <User className="w-5 h-5 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm truncate">{currentUser.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{currentUser.email}</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">{currentUser?.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{currentUser?.email}</p>
-            </div>
-          </div>
-        </Link>
+          </Link>
+        )}
 
         {/* Actions */}
         <div className="flex items-center gap-2">
