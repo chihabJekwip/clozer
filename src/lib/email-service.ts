@@ -217,12 +217,12 @@ Ce rapport a été généré automatiquement par Clozer.
   };
 }
 
-// Send tour report to supervisors
-// This function prepares the email and can be extended to use actual email providers
+// Send tour report to supervisors via API route
 export async function sendTourReportEmail(tourId: string): Promise<{
   success: boolean;
   message: string;
   recipients?: string[];
+  simulated?: boolean;
 }> {
   try {
     // Get tour data
@@ -266,7 +266,7 @@ export async function sendTourReportEmail(tourId: string): Promise<{
       if (client) clients.set(v.clientId, client);
     });
 
-    // Generate email
+    // Generate email content
     const email = generateTourReportEmail(
       tour,
       visits,
@@ -276,24 +276,38 @@ export async function sendTourReportEmail(tourId: string): Promise<{
       supervisors
     );
 
-    // TODO: Implement actual email sending here
-    // Options:
-    // 1. Use Vercel's built-in email (if available)
-    // 2. Use Resend (https://resend.com)
-    // 3. Use SendGrid
-    // 4. Use AWS SES
-    // 
-    // For now, we just log and mark as sent
-    console.log('📧 Email would be sent to:', email.to.map((r) => r.email).join(', '));
-    console.log('📧 Subject:', email.subject);
-    
+    // Send via API route
+    const response = await fetch('/api/send-report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: email.to,
+        subject: email.subject,
+        htmlBody: email.htmlBody,
+        textBody: email.textBody,
+        tourId,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: result.error || 'Erreur lors de l\'envoi',
+      };
+    }
+
     // Mark tour as report sent
     await markTourReportSent(tourId);
 
     return {
       success: true,
-      message: `Rapport envoyé à ${supervisors.length} superviseur${supervisors.length > 1 ? 's' : ''}`,
-      recipients: supervisors.map((s) => s.email),
+      message: result.message || `Rapport envoyé à ${supervisors.length} superviseur${supervisors.length > 1 ? 's' : ''}`,
+      recipients: result.recipients,
+      simulated: result.simulated,
     };
   } catch (error) {
     console.error('Error sending tour report email:', error);
