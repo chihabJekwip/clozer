@@ -206,6 +206,11 @@ CREATE INDEX IF NOT EXISTS idx_clozer_reactivation_requests_status ON clozer_rea
 CREATE INDEX IF NOT EXISTS idx_clozer_user_supervisors_user_id ON clozer_user_supervisors(user_id);
 
 -- ==================== ROW LEVEL SECURITY ====================
+-- NOTE: L'application utilise actuellement une authentification personnalisée (localStorage).
+-- Pour activer des politiques RLS restrictives, il faudrait migrer vers Supabase Auth.
+-- Les politiques actuelles permettent l'accès public car le contrôle d'accès 
+-- est géré côté application (storage.ts avec getToursByUser, getClientsByUser, etc.)
+
 ALTER TABLE clozer_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clozer_clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clozer_tours ENABLE ROW LEVEL SECURITY;
@@ -218,7 +223,8 @@ ALTER TABLE clozer_reactivation_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clozer_user_supervisors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clozer_settings ENABLE ROW LEVEL SECURITY;
 
--- Create policies for public access (using anon key)
+-- Politiques actuelles : Accès public avec anon key (contrôle côté app)
+-- IMPORTANT: Garder l'anon key confidentielle car ces politiques permettent tout
 CREATE POLICY "Allow all on clozer_users" ON clozer_users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on clozer_clients" ON clozer_clients FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on clozer_tours" ON clozer_tours FOR ALL USING (true) WITH CHECK (true);
@@ -230,6 +236,15 @@ CREATE POLICY "Allow all on clozer_user_addresses" ON clozer_user_addresses FOR 
 CREATE POLICY "Allow all on clozer_reactivation_requests" ON clozer_reactivation_requests FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on clozer_user_supervisors" ON clozer_user_supervisors FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on clozer_settings" ON clozer_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- FUTUR: Politiques RLS strictes (après migration vers Supabase Auth)
+-- Exemple pour les tournées (les commerciaux ne voient que leurs tournées):
+-- DROP POLICY IF EXISTS "Allow all on clozer_tours" ON clozer_tours;
+-- CREATE POLICY "Users can manage their own tours" ON clozer_tours
+--   FOR ALL USING (
+--     user_id = auth.uid() OR 
+--     EXISTS (SELECT 1 FROM clozer_users WHERE id = auth.uid() AND role = 'admin')
+--   );
 
 -- ==================== TRIGGERS FOR UPDATED_AT ====================
 CREATE OR REPLACE FUNCTION update_updated_at_column()

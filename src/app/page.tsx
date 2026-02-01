@@ -243,7 +243,13 @@ function HomeContent() {
       startPoint || customStartPoint || undefined
     );
 
-    setTours(getTours());
+    // Recharger les tournées selon le rôle de l'utilisateur
+    if (isAdmin) {
+      setTours(getTours());
+    } else if (currentUser) {
+      setTours(getToursByUser(currentUser.id));
+    }
+    
     setShowNewTourDialog(false);
     setNewTourName('');
     setSelectedClients(new Set());
@@ -288,7 +294,13 @@ function HomeContent() {
       startPoint || undefined
     );
     
-    setTours(getTours());
+    // Recharger les tournées selon le rôle de l'utilisateur
+    if (isAdmin) {
+      setTours(getTours());
+    } else if (currentUser) {
+      setTours(getToursByUser(currentUser.id));
+    }
+    
     setRefreshKey(prev => prev + 1);
     setPendingSuggestion(null);
     
@@ -334,7 +346,6 @@ function HomeContent() {
   // Stats
   const geocodedCount = clients.filter(c => c.latitude && c.longitude).length;
   const allGeocodedCount = allClients.filter(c => c.latitude && c.longitude).length;
-  const activeTours = tours.filter(t => t.status === 'in_progress');
 
   if (isLoading) {
     return (
@@ -352,37 +363,49 @@ function HomeContent() {
     router.push('/login');
   };
 
+  // Tournées actives (en cours)
+  const activeTours = tours.filter(t => t.status === 'in_progress' || t.status === 'planning');
+  const hasActiveTour = activeTours.some(t => t.status === 'in_progress');
+
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="bg-primary text-white p-4 sticky top-0 z-10">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header simplifié */}
+      <header className="bg-white border-b p-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-xl lg:text-2xl font-bold">Clozer</h1>
-            <p className="text-sm text-primary-foreground/80 flex items-center gap-2">
-              {isAdmin ? (
-                <>
-                  <Shield className="w-3 h-3" />
-                  Admin
-                </>
-              ) : (
-                <>
-                  Commercial
-                </>
-              )}
-              {currentUser && (
-                <span className="ml-1">• {currentUser.name}</span>
-              )}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center">
+              <Route className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">Clozer</h1>
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                {isAdmin ? (
+                  <>
+                    <Shield className="w-3 h-3" />
+                    Admin
+                  </>
+                ) : (
+                  'Commercial'
+                )}
+                {currentUser && (
+                  <span className="ml-1">• {currentUser.name}</span>
+                )}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden md:inline text-sm text-primary-foreground/80">
-              {clients.length} clients • {geocodedCount} géolocalisés
-            </span>
+            <div className="hidden md:flex items-center gap-2 text-sm text-gray-500 mr-2">
+              <span className="px-2 py-1 bg-blue-50 rounded-full text-blue-700 text-xs font-medium">
+                {clients.length} clients
+              </span>
+              <span className="px-2 py-1 bg-green-50 rounded-full text-green-700 text-xs font-medium">
+                {geocodedCount} GPS
+              </span>
+            </div>
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-white"
+              className="text-gray-500 hover:text-gray-700"
               onClick={handleLogout}
               title="Déconnexion"
             >
@@ -393,40 +416,62 @@ function HomeContent() {
       </header>
 
       <main className="p-4 lg:p-6 max-w-7xl mx-auto">
-        {/* Layout responsive : 1 colonne mobile, 2 colonnes desktop */}
+        {/* Bannière tournée en cours - Mobile prominente */}
+        {hasActiveTour && (
+          <div className="mb-4 lg:hidden">
+            <Link href={`/tour/${activeTours.find(t => t.status === 'in_progress')?.id}`}>
+              <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                      <Play className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-blue-100">Tournée en cours</p>
+                      <p className="font-semibold">
+                        {activeTours.find(t => t.status === 'in_progress')?.name}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white text-blue-600 px-4 py-2 rounded-xl font-semibold text-sm">
+                    Continuer
+                  </div>
+                </div>
+              </div>
+            </Link>
+          </div>
+        )}
+
+        {/* Layout responsive : 1 colonne mobile, 3 colonnes desktop */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           
           {/* Colonne gauche : Actions et Stats */}
           <div className="lg:col-span-1 space-y-4">
-            {/* Stats rapides */}
+            {/* Stats rapides - Design épuré mobile */}
             <div className="grid grid-cols-2 gap-3">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Users className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold">{clients.length}</div>
-                      <div className="text-xs text-muted-foreground">Clients</div>
-                    </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <Users className="w-5 h-5 text-blue-600" />
                   </div>
-                </CardContent>
-              </Card>
+                  <div>
+                    <div className="text-2xl font-bold text-gray-900">{clients.length}</div>
+                    <div className="text-xs text-gray-500">Clients</div>
+                  </div>
+                </div>
+              </div>
 
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <MapPin className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold">{geocodedCount}</div>
-                      <div className="text-xs text-muted-foreground">Géolocalisés</div>
-                    </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                    <MapPin className="w-5 h-5 text-green-600" />
                   </div>
-                </CardContent>
-              </Card>
+                  <div>
+                    <div className="text-2xl font-bold text-gray-900">{geocodedCount}</div>
+                    <div className="text-xs text-gray-500">Géolocalisés</div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Actions rapides */}

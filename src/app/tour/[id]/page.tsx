@@ -12,6 +12,7 @@ import AbsentModal from '@/components/tour/AbsentModal';
 import ReportModal from '@/components/tour/ReportModal';
 import TourNotesPanel from '@/components/tour/TourNotesPanel';
 import TourEndConfirmation from '@/components/tour/TourEndConfirmation';
+import TourModeLayout from '@/components/tour/TourModeLayout';
 import QuoteForm from '@/components/quote/QuoteForm';
 import {
   getClients,
@@ -40,6 +41,7 @@ import {
   Home,
   StickyNote,
   CheckSquare,
+  Maximize2,
 } from 'lucide-react';
 
 // Import dynamique de la carte pour éviter les erreurs SSR
@@ -75,6 +77,25 @@ export default function TourPage() {
   const [reportVisit, setReportVisit] = useState<Visit | null>(null);
   const [showNotesPanel, setShowNotesPanel] = useState(false);
   const [showEndConfirmation, setShowEndConfirmation] = useState(false);
+  const [isTourMode, setIsTourMode] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Auto-enable Tour Mode on mobile when tour is in progress
+  useEffect(() => {
+    if (isMobile && tour?.status === 'in_progress') {
+      setIsTourMode(true);
+    }
+  }, [isMobile, tour?.status]);
 
   // Charger les données
   useEffect(() => {
@@ -374,6 +395,8 @@ export default function TourPage() {
     ? clients.find(c => c.id === currentVisit.clientId)
     : null;
 
+  const completedCount = visits.filter(v => v.status === 'completed').length;
+
   // Affichage du formulaire de devis
   if (showQuoteForm && quoteClient) {
     return (
@@ -404,6 +427,96 @@ export default function TourPage() {
           />
         </div>
       </div>
+    );
+  }
+
+  // Mode Tournée - Interface focus mobile
+  if (isMobile && isTourMode && tour.status !== 'completed') {
+    return (
+      <>
+        <TourModeLayout
+          tour={tour}
+          visits={visits}
+          clients={clients}
+          currentVisitIndex={currentVisitIndex}
+          routeGeometry={routeGeometry}
+          onNavigate={handleNavigate}
+          onMarkCompleted={handleMarkCompleted}
+          onMarkAbsent={handleMarkAbsent}
+          onOpenNotes={() => setShowNotesPanel(true)}
+          onExitTourMode={() => setIsTourMode(false)}
+          onEndTour={handleRequestEndTour}
+          onOptimize={handleOptimize}
+          onSelectVisit={setCurrentVisitIndex}
+          isOptimizing={isOptimizing}
+          completedCount={completedCount}
+          totalCount={visits.length}
+          mapComponent={
+            <TourMap
+              clients={clients}
+              visits={visits}
+              currentVisitIndex={currentVisitIndex}
+              routeGeometry={routeGeometry}
+              startPoint={tour.startPoint}
+              onClientClick={(client) => {
+                const visitIndex = visits.findIndex(v => v.clientId === client.id);
+                if (visitIndex !== -1) {
+                  setCurrentVisitIndex(visitIndex);
+                }
+              }}
+            />
+          }
+        />
+        
+        {/* Modals overlay Tour Mode */}
+        {absentVisit && (
+          <AbsentModal
+            open={showAbsentModal}
+            onClose={() => {
+              setShowAbsentModal(false);
+              setAbsentVisit(null);
+            }}
+            client={clients.find(c => c.id === absentVisit.clientId)!}
+            onSelectStrategy={handleAbsentStrategy}
+            estimatedExtraTime={{
+              afterNext: 8,
+              onReturn: 15,
+            }}
+          />
+        )}
+        
+        {reportVisit && (
+          <ReportModal
+            open={showReportModal}
+            onClose={() => {
+              setShowReportModal(false);
+              setReportVisit(null);
+            }}
+            client={clients.find(c => c.id === reportVisit.clientId)!}
+            visitId={reportVisit.id}
+            onSaveReport={handleSaveReportAndComplete}
+          />
+        )}
+        
+        <TourNotesPanel
+          open={showNotesPanel}
+          onClose={() => setShowNotesPanel(false)}
+          tourId={tourId}
+          tourName={tour.name}
+        />
+        
+        <TourEndConfirmation
+          open={showEndConfirmation}
+          onClose={() => setShowEndConfirmation(false)}
+          onConfirm={handleConfirmEndTour}
+          tourName={tour.name}
+          stats={{
+            completed: completedCount,
+            total: visits.length,
+            absent: visits.filter(v => v.status === 'absent').length,
+          }}
+        />
+      </>
     );
   }
 
@@ -447,6 +560,18 @@ export default function TourPage() {
 
           {/* Actions header */}
           <div className="flex items-center gap-2">
+            {/* Bouton Mode Tournée - Mobile only */}
+            {isMobile && tour.status !== 'completed' && (
+              <Button
+                size="sm"
+                className="lg:hidden bg-blue-600 hover:bg-blue-700"
+                onClick={() => setIsTourMode(true)}
+              >
+                <Maximize2 className="w-4 h-4 mr-1" />
+                Mode Focus
+              </Button>
+            )}
+            
             {currentClient && (
               <Button
                 variant="outline"
@@ -463,6 +588,7 @@ export default function TourPage() {
               size="sm"
               onClick={handleOptimize}
               disabled={isOptimizing}
+              className="hidden lg:flex"
             >
               {isOptimizing ? (
                 <RotateCcw className="w-4 h-4 animate-spin" />
@@ -488,7 +614,7 @@ export default function TourPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleRequestEndTour}
-                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                className="text-orange-600 border-orange-300 hover:bg-orange-50 hidden lg:flex"
               >
                 <CheckSquare className="w-4 h-4 lg:mr-2" />
                 <span className="hidden lg:inline">Terminer</span>
