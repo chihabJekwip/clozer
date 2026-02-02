@@ -4,6 +4,7 @@ import './globals.css';
 import { Providers } from '@/components/providers/Providers';
 import MobileNav from '@/components/layout/MobileNav';
 import DesktopSidebar from '@/components/layout/DesktopSidebar';
+import InstallPrompt from '@/components/pwa/InstallPrompt';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -43,7 +44,9 @@ export default function RootLayout({
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossOrigin=""
         />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#1f2937" media="(prefers-color-scheme: dark)" />
       </head>
@@ -59,6 +62,9 @@ export default function RootLayout({
           
           {/* Mobile Bottom Nav */}
           <MobileNav />
+          
+          {/* PWA Install Prompt */}
+          <InstallPrompt />
         </Providers>
       </body>
     </html>
