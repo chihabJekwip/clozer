@@ -5,16 +5,34 @@ const withPWA = require('next-pwa')({
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
   runtimeCaching: [
+    // IMPORTANT: Exclude auth endpoints from caching - they must NEVER be cached
     {
-      urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
+      urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/.*/i,
+      handler: 'NetworkOnly', // Never cache auth requests
+    },
+    // Cache Supabase REST API (data) with NetworkFirst
+    {
+      urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
       handler: 'NetworkFirst',
       options: {
-        cacheName: 'supabase-api-cache',
+        cacheName: 'supabase-data-cache',
         expiration: {
           maxEntries: 50,
           maxAgeSeconds: 60 * 60, // 1 hour
         },
         networkTimeoutSeconds: 10,
+      },
+    },
+    // Cache Supabase Storage with CacheFirst
+    {
+      urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/.*/i,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'supabase-storage-cache',
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+        },
       },
     },
     {
